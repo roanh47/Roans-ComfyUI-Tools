@@ -108,6 +108,27 @@ const CSS = `
 .rt-folderslot { flex:0 0 auto; }
 .rt-folderslot:not(:empty) { padding:2px 0 0; }
 .rt-newfolder { display:flex; gap:8px; align-items:center; }
+
+/* the right-click menu, floating like ComfyUI's own popups */
+.rt-menu { position:fixed; z-index:10000; min-width:184px; padding:4px;
+      background:var(--rt-surface,#262729); border-radius:6px; box-shadow:0 10px 30px rgba(0,0,0,.5);
+      display:flex; flex-direction:column; }
+.rt-menu-item { display:flex; align-items:center; height:28px; padding:0 10px; border:0; border-radius:4px;
+      background:transparent; color:var(--fg-color,#fff); font:inherit; font-size:13px; text-align:left;
+      cursor:pointer; white-space:nowrap; }
+.rt-menu-item:hover { background:var(--rt-surface-hover,#313235); }
+.rt-menu-item.danger:hover { background:#4a2426; color:#fca5a5; }
+.rt-menu-head { padding:6px 10px 2px; font-size:11px; color:var(--rt-muted,#8a8a8a); }
+.rt-menu-sep { height:1px; margin:4px 6px; background:var(--rt-line,rgba(255,255,255,.09)); }
+
+/* folders read like ComfyUI's own tree nodes: icon, name, count */
+.rt-ficon { display:inline-flex; align-items:center; color:var(--rt-muted,#8a8a8a); flex:0 0 auto; }
+.rt-folder { min-height:32px; }
+.rt-folder .rt-name { font-weight:500; }
+.rt-card { margin-left:16px; }   /* workflows sit inside their folder, visibly */
+.rt-card.drop-before { box-shadow:inset 0 2px 0 0 var(--rt-accent,#60a5fa); }
+.rt-folder.drop-into { background:var(--rt-surface-hover,#313235);
+      box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); }
 .rt-add { display:flex; align-items:center; gap:8px; height:var(--rt-ctl); padding:0 10px;
       font:inherit; font-size:14px; color:var(--rt-muted); cursor:pointer;
       background:transparent; border:1px dashed var(--rt-line); border-radius:4px; }
@@ -1358,6 +1379,104 @@ function folderIcon(withPlus) {
   return svg;
 }
 
+/* ---------------------------------------------------------------- click menu --
+   Everything a row used to show as buttons lives here: rename, move, remove. */
+function closeContextMenu() {
+  document.querySelectorAll(".rt-menu").forEach((m) => m.remove());
+}
+document.addEventListener("click", () => closeContextMenu());
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeContextMenu();
+});
+
+function contextMenu(ev, items) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  closeContextMenu();
+  const menu = el("div", "rt-menu");
+  menu.onclick = (e) => e.stopPropagation();
+  for (const it of items) {
+    if (!it) continue;
+    if (it.separator) {
+      menu.appendChild(el("div", "rt-menu-sep"));
+      continue;
+    }
+    if (it.header) {
+      menu.appendChild(el("div", "rt-menu-head", it.header));
+      continue;
+    }
+    const item = el("button", "rt-menu-item" + (it.danger ? " danger" : ""), it.label);
+    item.onclick = async () => {
+      closeContextMenu();
+      try {
+        await it.action();
+      } catch (e) {
+        toast(String(e.message || e), "error");
+      }
+    };
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(ev.clientX, window.innerWidth - r.width - 8)}px`;
+  menu.style.top = `${Math.min(ev.clientY, window.innerHeight - r.height - 8)}px`;
+}
+
+function folderList() {
+  return (S.wfFolders || []).slice().sort();
+}
+
+async function moveWorkflowTo(rel, folder) {
+  try {
+    await api("/wf_move", { rel, folder });
+    await load(true);
+    toast(folder ? `moved into ${folder}` : "moved to the root");
+  } catch (e) {
+    toast(String(e.message || e), "error");
+  }
+  paint();
+}
+
+async function trashWorkflow(w) {
+  try {
+    await api("/wf_delete", { rel: w.rel });
+    await load(true);
+    toast(`"${w.display_name || w.name}" moved to .trash`);
+  } catch (e) {
+    toast(String(e.message || e), "error");
+  }
+  paint();
+}
+
+// Drop a workflow onto another one: same folder means reorder, otherwise it is a
+// move first and then an insert at that spot in the target folder.
+async function dropOntoWorkflow(draggedRel, target) {
+  const folder = target.folder || "";
+  const base = draggedRel.split("/").pop();
+  const from = draggedRel.split("/").slice(0, -1).join("/");
+  let rel = draggedRel;
+  if (from !== folder) {
+    await api("/wf_move", { rel: draggedRel, folder });
+    rel = folder ? `${folder}/${base}` : base;
+  }
+  const list = S.workflows
+    .filter((w) => (w.folder || "") === folder && w.rel !== draggedRel && w.rel !== rel)
+    .sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order))
+    .map((w) => w.rel);
+  const at = list.indexOf(target.rel);
+  list.splice(at < 0 ? list.length : at, 0, rel);
+  await api("/wf_order", { rels: list });
+  V.wf.sort = "custom";
+  await load(true);
+  toast("order saved (custom)");
+  paint();
+}
+
+function dragPayload(ev, value) {
+  ev.dataTransfer.setData("text/plain", value);
+  ev.dataTransfer.effectAllowed = "move";
+}
+
 function wfFolderMetaOf(folder) {
   return (S.wfFolderMeta || {})[folder] || {};
 }
@@ -1470,22 +1589,40 @@ function buildWorkflowBar() {
     row.appendChild(title);
 
     row.appendChild(el("span", "rt-spacer"));
-    row.appendChild(btn("open", null, () => openWorkflow(w.rel)));
-    row.appendChild(
-      btn("✎", "icon", () => {
-        V.wf.editing = V.wf.editing === w.rel ? null : w.rel;
-        V.wf.moving = null;
-        paint();
-      })
-    );
-    row.appendChild(
-      btn("⇢", "icon", () => {
-        V.wf.moving = V.wf.moving === w.rel ? null : w.rel;
-        V.wf.editing = null;
-        paint();
-      })
-    );
     card.appendChild(row);
+
+    // right click is the whole menu now: rename, move, remove
+    card.oncontextmenu = (ev) =>
+      contextMenu(ev, [
+        { label: "Open", action: () => openWorkflow(w.rel) },
+        { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; paint(); } },
+        { separator: true },
+        { header: "add to folder" },
+        { label: "→ root", action: () => moveWorkflowTo(w.rel, "") },
+        ...folderList().map((f) => ({ label: `→ ${f}`, action: () => moveWorkflowTo(w.rel, f) })),
+        { separator: true },
+        { label: "Move to .trash", danger: true, action: () => trashWorkflow(w) },
+      ]);
+
+    // drag a workflow onto another one to reorder, onto a folder to file it
+    card.draggable = true;
+    card.ondragstart = (ev) => dragPayload(ev, `wf:${w.rel}`);
+    card.ondragover = (ev) => {
+      if (!String(ev.dataTransfer.types).includes("text/plain")) return;
+      ev.preventDefault();
+      card.classList.add("drop-before");
+    };
+    card.ondragleave = () => card.classList.remove("drop-before");
+    card.ondrop = async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      card.classList.remove("drop-before");
+      const payload = ev.dataTransfer.getData("text/plain");
+      if (!payload.startsWith("wf:")) return;
+      const dragged = payload.slice(3);
+      if (dragged === w.rel) return;
+      await dropOntoWorkflow(dragged, w);
+    };
 
     // model badges live on their own line: long checkpoint names pushed the
     // row buttons onto a second row and made the card look broken.
@@ -1578,13 +1715,49 @@ function buildWorkflowBar() {
     });
     pin.title = "pin this folder to the top";
     headRow.appendChild(pin);
+    const ficon = el("span", "rt-ficon");
+    ficon.appendChild(folderIcon(false));
+    headRow.appendChild(ficon);
     headRow.appendChild(el("span", "rt-name", label));
-    const sub = btn("", "icon", () => openFolderInput(folder));
-    sub.appendChild(folderIcon(true));
-    sub.title = "new subfolder inside " + folder;
-    headRow.appendChild(sub);
     headRow.appendChild(el("span", "rt-spacer"));
     headRow.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
+
+    headRow.oncontextmenu = (ev) =>
+      contextMenu(ev, [
+        { label: "New subfolder…", action: () => openFolderInput(folder) },
+        { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; paint(); } },
+        { label: meta.pinned ? "Unpin folder" : "Pin folder to top", action: async () => {
+            await api("/wf_folder", { folder, pinned: !meta.pinned });
+            await load();
+            paint();
+          } },
+        { separator: true },
+        { label: "Delete folder (.trash)", danger: true, action: async () => {
+            try {
+              await api("/wf_rmdir", { folder });
+              await load(true);
+              toast("folder moved to .trash");
+            } catch (e) {
+              toast(String(e.message || e), "error");
+            }
+            paint();
+          } },
+      ]);
+
+    // dropping a workflow on a folder files it there
+    headRow.ondragover = (ev) => {
+      if (!String(ev.dataTransfer.types).includes("text/plain")) return;
+      ev.preventDefault();
+      headRow.classList.add("drop-into");
+    };
+    headRow.ondragleave = () => headRow.classList.remove("drop-into");
+    headRow.ondrop = async (ev) => {
+      ev.preventDefault();
+      headRow.classList.remove("drop-into");
+      const payload = ev.dataTransfer.getData("text/plain");
+      if (!payload.startsWith("wf:")) return;
+      await moveWorkflowTo(payload.slice(3), folder);
+    };
     if (V.wf.sort === "custom") {
       const bump = (delta) => async () => {
         const order = (meta.order == null ? 0 : meta.order) + delta;
@@ -1596,6 +1769,33 @@ function buildWorkflowBar() {
       headRow.appendChild(btn("↓", "icon", bump(1)));
     }
     tree.appendChild(headRow);
+
+    if (V.wf.renaming === folder) {
+      const row = el("div", "rt-newfolder");
+      row.style.marginLeft = `${(depth + 1) * 12}px`;
+      const name = input("rt-grow", label, "new folder name");
+      row.append(
+        name,
+        btn("save", "pri", async () => {
+          try {
+            await api("/wf_rename_folder", { folder, name: name.value.trim() });
+            await load(true);
+            V.wf.renaming = null;
+            toast("folder renamed");
+          } catch (e) {
+            toast(String(e.message || e), "error");
+          }
+          paint();
+        }),
+        btn("cancel", null, () => {
+          V.wf.renaming = null;
+          paint();
+        })
+      );
+      tree.appendChild(row);
+      name.focus();
+      name.select();
+    }
 
     if (collapsed) return;
     for (const child of childFolders) folderBlock(child, kids, byFolder, depth + 1);
