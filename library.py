@@ -267,10 +267,11 @@ CIVITAI_BY_HASH = "https://civitai.com/api/v1/model-versions/by-hash/"
 LOOKUP_UA = "Roans-ComfyUI-Tools/1.0"
 
 
-def file_sha256(path):
+def file_sha256(path, store=None):
     """SHA256 of a model file, remembered per (name, size, mtime) so a rescan
-    never rehashes gigabytes."""
-    store = load_store()
+    never rehashes gigabytes. Pass the caller's store so caches are not
+    clobbered by a stale copy being saved afterwards."""
+    store = store if store is not None else load_store()
     name = os.path.basename(path)
     try:
         st = os.stat(path)
@@ -290,11 +291,11 @@ def file_sha256(path):
     return digest
 
 
-def civitai_by_hash(digest):
+def civitai_by_hash(digest, store=None):
     """Ask Civitai which model version this file is. None when it is unknown."""
     if not digest:
         return None
-    store = load_store()
+    store = store if store is not None else load_store()
     if digest in store["lookups"]:
         return store["lookups"][digest]
     try:
@@ -303,13 +304,11 @@ def civitai_by_hash(digest):
             data = json.loads(r.read().decode("utf-8"))
     except Exception:
         return None
-    store = load_store()
     store["lookups"][digest] = data
-    save_store(store)
     return data
 
 
-def relink_models(limit=None, only=None, mirror="civitai.red"):
+def relink_models(limit=None, only=None, mirror="civitai.red", refresh=False):
     """Fill in the model metadata nobody should have to type: page link, base
     model, version and trigger words, taken from the file's own hash.
 
@@ -320,7 +319,7 @@ def relink_models(limit=None, only=None, mirror="civitai.red"):
     if only:
         targets = [m for m in targets if m["filename"] == only]
     for m in targets:
-        if not only and m.get("link"):
+        if not only and m.get("link") and not refresh:
             continue
         if limit is not None and len(linked) + len(failed) >= limit:
             break
@@ -328,24 +327,26 @@ def relink_models(limit=None, only=None, mirror="civitai.red"):
         if not path or not os.path.isfile(path):
             skipped.append(m["filename"])
             continue
-        digest = file_sha256(path)
-        data = civitai_by_hash(digest)
+        digest = file_sha256(path, store)
+        data = civitai_by_hash(digest, store)
         if not data:
             failed.append(m["filename"])
             continue
         entry = store["models"].setdefault(m["filename"], {})
+        auto = bool(entry.get("auto_linked"))
         model_id = data.get("modelId")
         version_id = data.get("id")
-        if model_id and version_id and not entry.get("link"):
+        if model_id and version_id and (not entry.get("link") or refresh):
             entry["link"] = f"https://{mirror}/models/{model_id}?modelVersionId={version_id}"
-        if data.get("baseModel") and not entry.get("base"):
+        if data.get("baseModel") and (not entry.get("base") or refresh):
             entry["base"] = data["baseModel"]
-        if data.get("name") and not entry.get("version"):
-            # the labels read "v{version}", so strip the v Civitai sends back
-            entry["version"] = str(data["name"]).lstrip("vV")
+        if data.get("name") and (not entry.get("version") or refresh):
+            # labels read "v{version}", so drop a leading v ONLY when a digit
+            # follows ("v17.0" -> "17.0"); names like "VAE" must survive intact
+            entry["version"] = re.sub(r"^[vV](?=\d)", "", str(data["name"]))
 
         words = [w for w in (data.get("trainedWords") or []) if w]
-        if words and not entry.get("keyword"):
+        if words and (not entry.get("keyword") or (refresh and auto)):
             entry["keyword"] = ", ".join(words[:8])
         if not entry.get("auto_linked"):
             entry["auto_linked"] = int(time.time())

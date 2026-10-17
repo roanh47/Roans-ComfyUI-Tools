@@ -229,7 +229,9 @@ async def post_relink(request):
         limit = int(data.get("limit") or 8)
     except (TypeError, ValueError):
         limit = 8
-    result = library.relink_models(limit=limit, only=data.get("filename"))
+    result = library.relink_models(
+        limit=limit, only=data.get("filename"), refresh=bool(data.get("refresh"))
+    )
     return web.json_response({"ok": True, **result})
 
 
