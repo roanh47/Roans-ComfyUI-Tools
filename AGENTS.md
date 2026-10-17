@@ -1,8 +1,9 @@
 # Roans ComfyUI Tools
 
 ## Project info
-- **Purpose:** Adds **Models** and **Prompts** tabs to the ComfyUI sidebar (next to Workflows).
-  Local-only: models live on disk, prompts live on disk, nothing talks to the internet.
+- **Purpose:** Enhances ComfyUI's own **Models** and **Workflows** sidebar panels in place, and
+  adds one new **Prompts** tab. Local-only: models live on disk, prompts live on disk, nothing
+  talks to the internet.
 - **Repo:** https://github.com/roanh47/Roans-ComfyUI-Tools
 - **Live install (a git clone):** `%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes\Roans-ComfyUI-Tools\`
 - **Target runtime:** ComfyUI Desktop 0.37.0, frontend 1.53.6, Python 3.12 (ComfyUI's own venv)
@@ -10,43 +11,65 @@
 
 ## How ComfyUI loads it
 `custom_nodes/` is scanned at boot. `NODE_CLASS_MAPPINGS` is deliberately **empty** — nothing
-appears in the node search. What makes the tabs work:
+appears in the node search. What makes it work:
 
 - `WEB_DIRECTORY = "./web"` → ComfyUI serves `web/` at `/extensions/Roans-ComfyUI-Tools/` and
   injects the JS at page load
-- `__init__.py` binds aiohttp routes onto `PromptServer.instance.routes` at import time
+- `__init__.py` binds ONE catch-all route onto `PromptServer.instance.routes` at import time
 
 The folder name is load-bearing — it is the URL segment the JS is served from, and the JS imports
-`../../scripts/app.js` relative to it. Keep the folder name, repo name, JS filename and API route
-prefix all spelled `Roans-ComfyUI-Tools`. Dashes and capitals are fine (verified: the folder is
-imported as a module by ComfyUI's loader and the relative import resolves).
+`../../scripts/app.js` relative to it. Keep folder name, repo name, JS filename and API route
+prefix all spelled `Roans-ComfyUI-Tools`. Dashes and capitals are fine.
 
 ## Layout
 ```
 Roans-ComfyUI-Tools/
 ├── AGENTS.md                      # this file
 ├── README.md                      # user-facing docs, incl. the clone instructions
-├── __init__.py                    # HTTP routes + hot-reload; no nodes
+├── __init__.py                    # the single catch-all route + hot-reload; no nodes
+├── api.py                         # every HTTP handler, dispatched from the catch-all
 ├── library.py                     # all the real logic: scanning, parsing, store
 ├── data/library.json              # YOUR data — gitignored, never commit
 ├── data/library.example.json      # empty template, safe to commit
-└── web/Roans-ComfyUI-Tools.js     # sidebar tabs (plain DOM, no build step)
+├── web/avatar.jpg                 # your pfp for the tab badges — gitignored
+└── web/Roans-ComfyUI-Tools.js     # Prompts tab + native-panel enhancements
 ```
 
 ## Developing live
 | changed | to see it |
 |---|---|
-| `library.py` | nothing — `_reload_library_if_changed()` reloads it on the next request |
-| `web/Roans-ComfyUI-Tools.js` | refresh the browser tab (Ctrl+Shift+R) |
-| `__init__.py` | restart ComfyUI — routes only bind at boot |
+| `library.py` | nothing — reloaded per request, lists refresh themselves |
+| `api.py` | nothing — reloaded per request, new endpoints included |
+| `web/Roans-ComfyUI-Tools.js` | nothing — the open UI polls `api/ui_version` and reloads itself |
+| `__init__.py` | restart ComfyUI, or `GET /Roans-ComfyUI-Tools/reload` |
 
-The hot-reload watches `library.py`'s mtime and calls `importlib.reload`. Keep new logic in
-`library.py` whenever possible so it stays live-editable; treat `__init__.py` as a thin router.
+`__init__.py` binds one catch-all route and dispatches into `api.py`; both `api.py` and
+`library.py` are `importlib.reload`-ed when their mtime moves. Keep new logic in those two files
+and you never restart ComfyUI. Treat `__init__.py` as a coordinator that should never change.
+
+## UI integration rules (learned the hard way)
+
+- **Modify the native panels, never replace them.** ComfyUI's Models and Workflows panels are Vue
+  components: they cannot be edited, but their DOM can be appended to, and a throttled
+  `MutationObserver` re-applies the injection after each re-render. Never add a second button for
+  something ComfyUI already has, and never `unregisterSidebarTab` a native tab.
+- **Sidebar tabs in this build render a Vue `component`.** A `type: "custom"` tab gets a working
+  button but an empty panel. `type: "vue"` takes a component, and the Vue runtime is discovered at
+  runtime from the served asset names (`vendor-vue-core-*.js` — the hash changes every version, so
+  never hardcode it). Registration is wrapped so a failure falls back to our own panel mounted
+  beside the strip rather than a tab with nothing in it.
+- **Symmetric spacing gets ONE constant.** The tab badge used two separate numbers for bottom and
+  left, they drifted, and it took three round trips to notice. `AVATAR_GAP` drives both.
+- **Offset horizontally with `transform`, not `right`.** The tab buttons sit flush against the
+  sidebar edge, so a `right` offset does not readably move the badge while `bottom` does —
+  `translateX` always applies. Positioning against an inner icon element is also wrong: that box
+  does not match the visible glyph (it landed mid-icon).
+- **Throttle DOM work.** One observer pass per animation frame. Full-document scans per mutation
+  saturate the main thread and make the page stop answering.
+- **Ship no personal data.** `data/library.json` and `web/avatar.jpg` are gitignored, and the
+  avatar code removes the badge on load error, so a fresh clone degrades cleanly.
 
 ## Conventions
-- **No personal data in git.** `data/library.json` holds model filenames, civitai/HF links and
-  private notes. It is gitignored — keep it that way, and never paste its contents into README,
-  commit messages or issues.
 - Stdlib only. HTTP is `aiohttp` via ComfyUI; keep it that way (no `requests`, no `httpx`).
 - Model metadata is read from the safetensors header only — never load weights. dtype is picked
   by **byte weight** (`numel * dtype size`), not tensor count: quantized files carry hundreds of
@@ -57,12 +80,21 @@ The hot-reload watches `library.py`'s mtime and calls `importlib.reload`. Keep n
 - Workflow parsing handles both UI format (`nodes`/`links`) and API format (`class_type`).
   Positive/negative are resolved by following the KSampler link, not by widget order.
 - Anything the user types wins over a detected value; the detected value is only a fallback.
+- Content search ANDs its terms, so `h0rs3 mud` narrows to one result instead of five.
+- The `custom`-tab `render` return value is unused; repaint is driven by `ui_version` polling and
+  `repaint`.
 
 ## Verifying a change
 ComfyUI must be running (`curl http://127.0.0.1:8188/system_stats`). Then:
 
 ```bash
 curl -s http://127.0.0.1:8188/Roans-ComfyUI-Tools/api/dump | head -40
+```
+
+Syntax-check the JS with node before committing:
+
+```bash
+cp web/Roans-ComfyUI-Tools.js /tmp/rt.mjs && node --check /tmp/rt.mjs
 ```
 
 Without ComfyUI running, dry-run the module against ComfyUI's own interpreter — `library.py`
@@ -78,6 +110,7 @@ cd "%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI"
 git add -A && git commit -m "..." && git push origin main && git push onedrive HEAD:main
 ```
 `origin` = GitHub (code only). `onedrive` = bare repo backup (`OneDrive\Coding\Roans-ComfyUI-Tools.git`).
+Both are pushed on every commit; verify with `git rev-parse HEAD origin/main onedrive/main`.
 
 ## Gotcha
 Deleting or renaming this folder fails with **"Device or resource busy" / WinError 32** if any
