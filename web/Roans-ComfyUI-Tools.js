@@ -1098,6 +1098,12 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  const integrity = {
+    wfRows: document.querySelectorAll(".rt-wf-bar .rt-card").length,
+    wfNamed: document.querySelectorAll(".rt-wf-bar .rt-card .rt-title").length,
+    mdRows: document.querySelectorAll(".rt-md-bar .rt-card").length,
+    mdNamed: document.querySelectorAll(".rt-md-bar .rt-card .rt-title").length,
+  };
   const mdRow = document.querySelector(".rt-md-bar .rt-card");
   const mdRowTitle = mdRow && mdRow.querySelector(".rt-title");
   const mdRowInfo = mdRow
@@ -1125,6 +1131,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    integrity,
     mdRow: mdRowInfo,
     controlSizes: ctl,
     href: location.href,
@@ -1601,6 +1608,8 @@ function buildModelsBar() {
         paint();
       })
     );
+    card.appendChild(row); // the builder above produced this row — attach it
+
     const mdBadges = [];
     if (m.model_type) mdBadges.push(badge(m.model_type, "a"));
     if (m.file_type) mdBadges.push(badge(m.file_type, "t"));
