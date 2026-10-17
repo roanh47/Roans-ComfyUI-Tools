@@ -501,12 +501,14 @@ function enhanceNativeModelLibrary() {
       inject();
       markRows();
       decorateNativeTabs();
+      enhanceNativeWorkflows();
     });
   });
   obs.observe(document.body, { childList: true, subtree: true });
   inject();
   markRows();
   decorateNativeTabs();
+  enhanceNativeWorkflows();
   console.log("[Roans-ComfyUI-Tools] ComfyUI's Models panel enhancer installed");
 }
 
@@ -829,6 +831,92 @@ function decorateNativeTabs() {
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
     btn.appendChild(img);
   }
+}
+
+/* ------------- ComfyUI's own Workflows panel: search inside workflows -------- */
+
+// ComfyUI's workflow search only matches filenames. We already parse every
+// workflow's checkpoint, loras, prompts and sampler settings server-side, so this
+// injects a content-search bar into the native panel and lists what matches.
+const WF_PANEL = ".comfyui-workflows-panel, .comfyui-workflows-browse";
+
+function wfMatches(query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const terms = needle.split(/\s+/).filter(Boolean);
+  return S.workflows.filter((w) => {
+    const hay = [
+      w.name,
+      w.file,
+      w.checkpoint,
+      w.positive,
+      w.negative,
+      (w.loras || []).map((l) => l.name).join(" "),
+      w.sampler?.sampler,
+      w.sampler?.scheduler,
+      w.size,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return terms.every((t) => hay.includes(t)); // every word must hit — "h0rs3 mud"
+  });
+}
+
+function buildWorkflowBar() {
+  const bar = el("div", "rt-wf-bar");
+  bar.style.cssText = "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
+
+  const head = el("div", "rt-head");
+  head.appendChild(el("span", "rt-sec", "search inside workflows"));
+  bar.appendChild(head);
+
+  const search = input(null, "", "checkpoint, lora, prompt words…");
+  const results = el("div", "rt-scroll");
+  results.style.cssText = "max-height:46vh;";
+
+  const paint = () => {
+    results.innerHTML = "";
+    if (!search.value.trim()) {
+      results.style.display = "none";
+      return;
+    }
+    const found = wfMatches(search.value);
+    results.style.display = "flex";
+    if (!found.length) {
+      results.appendChild(el("div", "rt-empty", "no workflow matches"));
+      return;
+    }
+    for (const w of found) {
+      const card = el("div", "rt-card");
+      card.style.cursor = "pointer";
+      card.title = "open " + w.file;
+      const row = el("div", "rt-head");
+      row.appendChild(el("span", "rt-title", w.name));
+      if (w.checkpoint) row.appendChild(badge(w.checkpoint.replace(/\.safetensors$/, "")));
+      for (const l of w.loras || []) row.appendChild(badge(l.name.replace(/\.safetensors$/, "")));
+      card.appendChild(row);
+      if (w.positive) card.appendChild(el("div", "rt-code", w.positive.slice(0, 200)));
+      const sk = w.sampler || {};
+      card.appendChild(
+        el("div", "rt-dim", [w.size, sk.steps ? `${sk.steps} steps` : "", sk.cfg ? `cfg ${sk.cfg}` : "", sk.sampler].filter(Boolean).join(" · "))
+      );
+      card.onclick = () => openWorkflow(w.file);
+      results.appendChild(card);
+    }
+  };
+  search.oninput = paint;
+  paint();
+
+  bar.append(search, results);
+  return bar;
+}
+
+function enhanceNativeWorkflows() {
+  const panel = document.querySelector(WF_PANEL);
+  if (!panel || panel.querySelector(".rt-wf-bar")) return;
+  panel.prepend(buildWorkflowBar());
+  console.log("[Roans-ComfyUI-Tools] content search added inside ComfyUI's Workflows panel");
 }
 
 /**
