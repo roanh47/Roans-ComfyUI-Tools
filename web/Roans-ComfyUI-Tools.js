@@ -1611,7 +1611,7 @@ function enhanceNativeModels() {
   guardInjection("model-library", ".rt-md-bar", () => {
     const tree = document.querySelector(".model-lib-tree-explorer");
     return tree && tree.parentElement;
-  }, buildModelsBar, "models");
+  }, buildModelsBar, "models", { takeover: true });
 }
 
 function enhanceNativeWorkflows() {
