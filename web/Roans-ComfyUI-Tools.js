@@ -1101,10 +1101,11 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
-  if (!RT_STATS.selfTested) {
-    RT_STATS.selfTested = true;
+  if (!RT_STATS.selfTestDone) {
+    // Retry until the bar exists: the first report happens before injection.
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (b) {
+      RT_STATS.selfTestDone = true;
       const before = String(V.wf.newFolder);
       b.click();
       RT_STATS.selfTest = {
@@ -1112,9 +1113,9 @@ function reportDiag() {
         before,
         after: String(V.wf.newFolder),
         slotChildren: document.querySelectorAll(".rt-folderslot > *").length,
+        buttonTag: b.tagName,
+        hasOnclick: typeof b.onclick === "function",
       };
-    } else {
-      RT_STATS.selfTest = { found: false };
     }
   }
   const hit = (() => {
