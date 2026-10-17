@@ -789,23 +789,8 @@ let repaint = () => {};
 // simply has no badge (img.onerror removes it), so nothing personal goes public.
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
-const AVATAR_GAP = 3; // px — spacing from the bottom and right of the icon glyph
+const AVATAR_GAP = 3; // px — spacing: 3px up from the bottom, 3px left from the right
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
-
-/** The tightest box around the visible glyph inside a tab button. */
-function glyphBox(btn) {
-  const cands = [];
-  for (const e of btn.querySelectorAll("svg, span, i, img")) {
-    if (e.classList.contains("rt-avatar-badge")) continue;
-    const r = e.getBoundingClientRect();
-    if (r.width >= 8 && r.width <= 40 && r.height >= 8 && r.height <= 40) {
-      cands.push({ e, r, area: r.width * r.height });
-    }
-  }
-  if (!cands.length) return null;
-  cands.sort((a, b) => a.area - b.area); // smallest box = the glyph, not a wrapper
-  return cands[0];
-}
 
 /**
  * Badges the sidebar tab buttons that this extension is enhancing. The buttons
@@ -813,8 +798,9 @@ function glyphBox(btn) {
  * position/overflow if the native styling would clip it. Vue re-renders the strip
  * from scratch, so this is called from an observer as well as on demand.
  *
- * Placement is computed from the measured glyph box and written as top/left px, so
- * it does not depend on how the browser resolves right/bottom against the button.
+ * The left nudge is a transform, not `right`: this button's right edge sits against
+ * the sidebar edge, so a `right` offset does not readably shift the badge (it slid
+ * `bottom` fine but not `right`). translateX always applies.
  */
 function decorateNativeTabs() {
   for (const id of AVATAR_TABS) {
@@ -823,21 +809,15 @@ function decorateNativeTabs() {
     const cs = getComputedStyle(btn);
     if (cs.position === "static") btn.style.position = "relative";
     if (cs.overflow === "hidden") btn.style.overflow = "visible";
-
-    const btnRect = btn.getBoundingClientRect();
-    const glyph = glyphBox(btn);
-    const r = glyph ? glyph.r : btnRect;
-    const left = r.right - btnRect.left - AVATAR_SIZE - AVATAR_GAP;
-    const top = r.bottom - btnRect.top - AVATAR_SIZE - AVATAR_GAP;
-
     const img = el("img", "rt-avatar-badge");
     img.src = AVATAR_URL;
     img.alt = "";
     img.draggable = false;
     img.style.cssText = [
       "position:absolute",
-      `left:${Math.max(0, Math.round(left))}px`,
-      `top:${Math.max(0, Math.round(top))}px`,
+      "right:0",
+      `bottom:${AVATAR_GAP}px`,
+      `transform:translateX(-${AVATAR_GAP}px)`,
       `width:${AVATAR_SIZE}px`,
       `height:${AVATAR_SIZE}px`,
       "border-radius:50%",
