@@ -180,6 +180,92 @@ function select(options, value, onChange) {
   s.onchange = () => onChange(s.value);
   return s;
 }
+
+/* ------------------------- talking to the graph (prompts <-> text nodes) ---- */
+
+function isTextNode(node) {
+  const t = (node?.type || node?.comfyClass || "").toString();
+  return t.includes("CLIPTextEncode") || t.includes("TextEncode");
+}
+function textNodes() {
+  try {
+    return (app.graph?._nodes || []).filter(isTextNode);
+  } catch (e) {
+    return [];
+  }
+}
+function nodeText(node) {
+  const w = (node?.widgets || []).find((x) => x.name === "text") || (node?.widgets || [])[0];
+  return w ? String(w.value ?? "") : "";
+}
+function setNodeText(node, text) {
+  const w = (node?.widgets || []).find((x) => x.name === "text") || (node?.widgets || [])[0];
+  if (!w) return false;
+  w.value = text;
+  try {
+    w.callback?.(text, app.canvas, node, [0, 0], {});
+  } catch (e) {}
+  try {
+    app.graph.setDirtyCanvas(true, true);
+  } catch (e) {}
+  return true;
+}
+function selectedTextNode() {
+  try {
+    const sel = app.canvas?.selected_nodes || {};
+    return Object.values(sel).filter((n) => isTextNode(n))[0] || null;
+  } catch (e) {
+    return null;
+  }
+}
+/** Longest text node is the positive prompt, shortest is the negative, as a rule. */
+function rankedTextNodes() {
+  return textNodes()
+    .slice()
+    .sort((a, b) => nodeText(b).length - nodeText(a).length);
+}
+
+function promptFromCanvas() {
+  const ranked = rankedTextNodes();
+  if (!ranked.length) {
+    toast("this workflow has no text encode node", "warn");
+    return null;
+  }
+  const pos = nodeText(ranked[0]);
+  const neg = ranked.length > 1 ? nodeText(ranked[ranked.length - 1]) : "";
+  if (!pos.trim()) {
+    toast("the text node is empty", "warn");
+    return null;
+  }
+  let name = "from canvas";
+  try {
+    name = app.workflowManager?.activeWorkflow?.name || app.graph?.name || name;
+  } catch (e) {}
+  return { positive: pos, negative: neg, name };
+}
+
+/** Push a prompt onto the graph: the selected node, else the natural one for that role. */
+function textToNode(text, role) {
+  const sel = selectedTextNode();
+  if (sel) {
+    setNodeText(sel, text);
+    toast(`sent to the selected node (${role})`);
+    return;
+  }
+  const ranked = rankedTextNodes();
+  if (!ranked.length) {
+    toast("this workflow has no text encode node", "warn");
+    return;
+  }
+  const target = role === "negative" ? ranked[ranked.length - 1] : ranked[0];
+  if (ranked.length === 1 && role === "negative") {
+    setNodeText(target, text);
+    toast("only one text node — wrote the negative into it");
+    return;
+  }
+  setNodeText(target, text);
+  toast(`sent to ${target.title || target.type || "the text node"} (${role})`);
+}
 function groupItems(items, keyFn) {
   const groups = new Map();
   for (const it of items) {
@@ -493,6 +579,16 @@ function renderPrompts(root) {
       paintPrompts();
     });
   });
+  const grab = btn("from canvas", null, () => {
+    const p = promptFromCanvas();
+    if (!p) return;
+    editorHost.innerHTML = "";
+    promptEditor(editorHost, p, () => {
+      editorHost.innerHTML = "";
+      paintPrompts();
+    });
+  });
+  grab.title = "pull the prompt out of the workflow that is open right now";
   const group = select(
     [["none", "group: none"], ["workflow", "group: workflow"], ["tag", "group: tag"], ["checkpoint", "group: checkpoint"]],
     V.prompt.group,
@@ -501,7 +597,7 @@ function renderPrompts(root) {
       paintPrompts();
     }
   );
-  bar.append(search, group, add);
+  bar.append(search, group, grab, add);
   wrap.appendChild(bar);
 
   const chips = el("div", "rt-bar");
@@ -562,11 +658,15 @@ function renderPrompts(root) {
     const actions = el("div", "rt-actions");
     actions.append(
       btn("copy positive", null, () => copy(p.positive, "positive prompt")),
+      btn("→ node", null, () => textToNode(p.positive, "positive")),
       btn("copy negative", p.negative ? null : "warn", () => {
         if (!p.negative) return toast("this prompt has no negative", "warn");
         copy(p.negative, "negative prompt");
       })
     );
+    if (p.negative) {
+      actions.appendChild(btn("→ node neg", null, () => textToNode(p.negative, "negative")));
+    }
     if (p.negative && !open) {
       actions.appendChild(
         btn("show negative", null, () => {
@@ -689,7 +789,23 @@ let repaint = () => {};
 // simply has no badge (img.onerror removes it), so nothing personal goes public.
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
+const AVATAR_GAP = 3; // px — spacing from the icon's bottom and right edges
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
+
+/** The icon element inside a tab button, so the badge hugs the icon not the button box. */
+function iconTarget(btn) {
+  const candidates = [
+    ".iconify",
+    "[class*='icon-']",
+    "svg",
+    "span",
+  ];
+  for (const sel of candidates) {
+    const node = btn.querySelector(sel);
+    if (node && node.getBoundingClientRect().width > 4) return node;
+  }
+  return btn;
+}
 
 /**
  * Badges the sidebar tab buttons that this extension is enhancing. The buttons
@@ -700,18 +816,22 @@ const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts
 function decorateNativeTabs() {
   for (const id of AVATAR_TABS) {
     const btn = document.querySelector(`[data-testid="${id}-tab-button"]`);
-    if (!btn || btn.querySelector(".rt-avatar-badge")) continue;
-    const cs = getComputedStyle(btn);
-    if (cs.position === "static") btn.style.position = "relative";
-    if (cs.overflow === "hidden") btn.style.overflow = "visible";
+    if (!btn) continue;
+    const target = iconTarget(btn);
+    const existing = btn.querySelector(".rt-avatar-badge");
+    if (existing && existing.parentElement === target) continue;
+    if (existing) existing.remove();
+    const cs = getComputedStyle(target);
+    if (cs.position === "static") target.style.position = "relative";
+    if (cs.overflow === "hidden") target.style.overflow = "visible";
     const img = el("img", "rt-avatar-badge");
     img.src = AVATAR_URL;
     img.alt = "";
     img.draggable = false;
     img.style.cssText = [
       "position:absolute",
-      "right:1px",
-      "bottom:1px",
+      `right:${AVATAR_GAP}px`,
+      `bottom:${AVATAR_GAP}px`,
       `width:${AVATAR_SIZE}px`,
       `height:${AVATAR_SIZE}px`,
       "border-radius:50%",
@@ -721,7 +841,7 @@ function decorateNativeTabs() {
       "box-shadow:0 0 0 1px rgba(0,0,0,.6)",
     ].join(";");
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
-    btn.appendChild(img);
+    target.appendChild(img);
   }
 }
 
