@@ -1101,39 +1101,6 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
-  if (!RT_STATS.selfTestDone) {
-    // Retry until the bar exists: the first report happens before injection.
-    const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
-    if (b) {
-      RT_STATS.selfTestDone = true;
-      const before = String(V.wf.newFolder);
-      b.click();
-      RT_STATS.selfTest = {
-        found: true,
-        before,
-        after: String(V.wf.newFolder),
-        slotChildren: document.querySelectorAll(".rt-folderslot > *").length,
-      };
-      // end-to-end: name it and press create, the same way a user would
-      const field = document.querySelector(".rt-folderslot input");
-      const createBtn = [...document.querySelectorAll(".rt-folderslot .rt-btn")].find(
-        (x) => x.textContent === "create"
-      );
-      if (field && createBtn) {
-        field.value = "_rt_probe";
-        createBtn.click();
-        setTimeout(async () => {
-          try {
-            const st = await api("/state");
-            RT_STATS.selfTest.created = st.wf_folders.includes("_rt_probe");
-            RT_STATS.selfTest.folders = st.wf_folders;
-          } catch (e) {
-            RT_STATS.selfTest.created = "error: " + e;
-          }
-        }, 900);
-      }
-    }
-  }
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
