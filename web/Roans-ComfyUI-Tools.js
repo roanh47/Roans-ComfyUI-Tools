@@ -818,7 +818,7 @@ function decorateNativeTabs() {
     img.style.cssText = [
       "position:absolute",
       "right:0",
-      `bottom:${AVATAR_GAP}px`,
+      `top:${AVATAR_GAP}px`,
       `transform:translateX(-${AVATAR_GAP}px)`,
       `width:${AVATAR_SIZE}px`,
       `height:${AVATAR_SIZE}px`,
@@ -1063,8 +1063,12 @@ function mountFallbackPanel(painter) {
       });
     }
 
+    // Never show a second copy: if ComfyUI rendered our panel itself, ours stays hidden.
+    const ours = document.querySelector(".rt-wrap");
+    const sidebarHasOurs = !!ours && !panel.contains(ours);
+
     const on = activeId === "roansPrompts" || panel.dataset.forced === "1";
-    panel.style.display = on ? "block" : "none";
+    panel.style.display = on && !sidebarHasOurs ? "block" : "none";
     if (on && !host.dataset.painted) {
       host.dataset.painted = "1";
       paint();
@@ -1105,9 +1109,9 @@ app.registerExtension({
       Vue
     );
 
-    // if the tab registered as a component, ComfyUI renders the panel itself;
-    // otherwise we draw the panel next to the strip while our tab is active
-    mountFallbackPanel(renderPrompts);
+    // if the tab registered as a component, ComfyUI renders the panel itself, so we
+    // do not mount a second one; the fallback exists only for the failed-vue case
+    if (mode !== "vue") mountFallbackPanel(renderPrompts);
 
     pollTimer = setInterval(pollUi, 4000);
     console.log("[Roans-ComfyUI-Tools] setup complete; enhancing ComfyUI's Models panel");
