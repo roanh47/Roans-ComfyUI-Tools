@@ -1218,6 +1218,39 @@ function reportDiag() {
       .filter((v) => v.n >= 2 || /input|button|a$/.test(v.key))
       .slice(0, 30);
   })();
+  // structural check of the new rows: no buttons left, menus and drag wired
+  const rowCheck = (() => {
+    const card = document.querySelector(".rt-wf-bar .rt-card");
+    const folderRow = document.querySelector(".rt-wf-bar .rt-folder");
+    const out = {};
+    if (card) {
+      out.workflowRow = {
+        buttons: [...card.querySelectorAll(".rt-head > button")].map((b) => b.textContent.trim()),
+        draggable: card.draggable,
+        hasMenu: typeof card.oncontextmenu === "function",
+        hasDrop: typeof card.ondrop === "function",
+      };
+    }
+    if (folderRow) {
+      out.folderRow = {
+        buttons: [...folderRow.querySelectorAll("button")].map((b) => b.textContent.trim() || "(icon)"),
+        hasFolderIcon: !!folderRow.querySelector(".rt-ficon svg"),
+        hasMenu: typeof folderRow.oncontextmenu === "function",
+        hasDrop: typeof folderRow.ondrop === "function",
+      };
+    }
+    return out;
+  })();
+  if (!RT_STATS.menuProbed && document.querySelector(".rt-wf-bar .rt-card")) {
+    RT_STATS.menuProbed = true;
+    const card = document.querySelector(".rt-wf-bar .rt-card");
+    const fake = new MouseEvent("contextmenu", { bubbles: true, clientX: 120, clientY: 120 });
+    card.dispatchEvent(fake);
+    RT_STATS.menuProbe = [...document.querySelectorAll(".rt-menu .rt-menu-item, .rt-menu .rt-menu-head")]
+      .map((m) => m.textContent.trim())
+      .slice(0, 30);
+    closeContextMenu();
+  }
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
@@ -1267,6 +1300,8 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    rowCheck,
+    menuProbe: RT_STATS.menuProbe,
     census,
     native,
     wfQ: V.wf.q,
