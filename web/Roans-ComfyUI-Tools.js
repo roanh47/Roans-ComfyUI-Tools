@@ -6,64 +6,91 @@ const RT_CLIENT = Math.random().toString(36).slice(2, 8); // one id per page loa
 /* ------------------------------------------------------------------ styling */
 
 const CSS = `
+/* One control height for every button, input and select, so nothing looks
+   improvised. Colours come from ComfyUI's own variables, never hard-coded. */
 .rt { display:flex; flex-direction:column; height:100%; box-sizing:border-box;
       font-size:12px; color:var(--fg-color,#d4d4d4); }
-.rt-bar { display:flex; gap:6px; align-items:center; padding:8px 9px 7px;
-          border-bottom:1px solid var(--border-color,#3a3a3a); flex-wrap:wrap; }
-.rt-scroll { flex:1; overflow-y:auto; padding:9px; display:flex; flex-direction:column; gap:8px; }
-.rt-input, .rt-select, .rt-area {
-      background:var(--comfy-input-bg,#1e1e1e); color:inherit; font:inherit;
-      border:1px solid var(--border-color,#3a3a3a); border-radius:7px;
-      padding:5px 8px; box-sizing:border-box; width:100%; }
-.rt-area { resize:vertical; min-height:64px; line-height:1.45;
-           font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
-.rt-input:focus, .rt-select:focus, .rt-area:focus {
-      outline:none; border-color:var(--p-primary-color,#7aa2f7); }
-.rt-grow { flex:1; min-width:90px; }
-.rt-btn { background:transparent; color:inherit; font:inherit; font-size:11px;
-      border:1px solid var(--border-color,#3a3a3a); border-radius:7px;
-      padding:4px 9px; cursor:pointer; white-space:nowrap; transition:border-color .12s,color .12s; }
+.rt-app { --rt-ctl:26px; --rt-line:var(--border-color,#3a3a3a);
+          height:100%; min-height:0; box-sizing:border-box; overflow:hidden;
+          display:flex; flex-direction:column; }
+.rt-bar { padding:8px; display:flex; flex-direction:column; gap:7px;
+          border-bottom:1px solid var(--rt-line); flex:0 0 auto; }
+.rt-head { display:flex; gap:6px; align-items:center; min-width:0; flex-wrap:nowrap; }
+.rt-head.wrap { flex-wrap:wrap; }
+.rt-spacer { flex:1 1 auto; min-width:0; }
+.rt-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
+             padding:8px; display:flex; flex-direction:column; gap:6px; }
+
+/* controls */
+.rt-btn, .rt-input, .rt-select, .rt-area {
+      background:transparent; color:inherit; font:inherit; font-size:11.5px;
+      border:1px solid var(--rt-line); border-radius:6px; box-sizing:border-box;
+      height:var(--rt-ctl); padding:0 9px; }
+.rt-input, .rt-select { background:color-mix(in srgb, #000 20%, transparent); padding:0 7px; }
+.rt-select { padding-right:4px; }
+.rt-area { height:auto; min-height:62px; padding:6px 8px; resize:vertical;
+      line-height:1.45; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+.rt-btn { cursor:pointer; white-space:nowrap; transition:border-color .12s,color .12s,background .12s;
+      display:inline-flex; align-items:center; justify-content:center; gap:4px; }
 .rt-btn:hover { border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); }
-.rt-btn.pri { background:var(--p-primary-color,#7aa2f7); border-color:var(--p-primary-color,#7aa2f7); color:#101010; font-weight:600; }
+.rt-btn.icon { width:var(--rt-ctl); padding:0; flex:0 0 auto; opacity:.75; }
+.rt-btn.icon:hover { opacity:1; }
+.rt-btn.icon.on { opacity:1; color:var(--p-primary-color,#7aa2f7); border-color:transparent; }
+.rt-btn.pri { background:var(--p-primary-color,#7aa2f7); border-color:var(--p-primary-color,#7aa2f7);
+      color:#101010; font-weight:600; }
 .rt-btn.pri:hover { color:#101010; filter:brightness(1.08); }
 .rt-btn.warn:hover { border-color:#e06c75; color:#e06c75; }
-.rt-btn.icon { padding:4px 6px; }
-.rt-chips { display:flex; gap:4px; flex-wrap:wrap; }
-.rt-chip { font-size:10px; padding:2px 8px; border-radius:99px; cursor:pointer;
-      border:1px solid var(--border-color,#3a3a3a); opacity:.8; white-space:nowrap;
-      background:transparent; color:inherit; font-family:inherit; }
-.rt-chip:hover { opacity:1; }
-.rt-chip.on { border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); opacity:1; }
-.rt-card { border:1px solid var(--border-color,#3a3a3a); border-radius:10px;
-      padding:9px 10px; background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 55%, transparent); }
-.rt-card:hover { border-color:color-mix(in srgb, var(--p-primary-color,#7aa2f7) 45%, var(--border-color,#3a3a3a)); }
-.rt-head { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-.rt-title { font-weight:600; font-size:12.5px; }
-.rt-spacer { flex:1; }
-.rt-dim { opacity:.55; font-size:10.5px; }
+.rt-input:focus, .rt-select:focus, .rt-area:focus { outline:none;
+      border-color:var(--p-primary-color,#7aa2f7); }
+.rt-grow { flex:1 1 auto; min-width:0; }
+
+/* header + folder rows */
+.rt-sec { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
+      opacity:.45; white-space:nowrap; }
+.rt-root { display:flex; align-items:center; gap:6px; padding:2px 2px 4px; }
+.rt-root .rt-name { font-size:11px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.07em; opacity:.5; }
+.rt-folder { display:flex; align-items:center; gap:6px; min-width:0; padding:2px 2px 3px; }
+.rt-folder .rt-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden;
+      text-overflow:ellipsis; min-width:0; }
+.rt-count { font-size:10.5px; opacity:.45; white-space:nowrap; font-variant-numeric:tabular-nums; }
+
+/* cards */
+.rt-card { border:1px solid var(--rt-line); border-radius:8px; padding:7px 8px;
+      background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 45%, transparent);
+      display:flex; flex-direction:column; gap:5px; min-width:0; }
+.rt-card:hover { border-color:color-mix(in srgb, var(--p-primary-color,#7aa2f7) 40%, var(--rt-line)); }
+.rt-title { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden;
+      text-overflow:ellipsis; min-width:0; flex:0 1 auto; cursor:pointer; }
+.rt-title:hover { color:var(--p-primary-color,#7aa2f7); }
+.rt-detail { display:flex; flex-direction:column; gap:6px; padding-top:2px; }
+.rt-dim { font-size:10.5px; opacity:.5; white-space:nowrap; }
 .rt-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px; opacity:.6;
       word-break:break-all; }
-.rt-badges { display:flex; gap:4px; flex-wrap:wrap; }
-.rt-badge { font-size:9.5px; padding:1.5px 7px; border-radius:99px;
-      border:1px solid var(--border-color,#3a3a3a); opacity:.85; white-space:nowrap; }
+.rt-badges { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+.rt-badge { font-size:9.5px; padding:1px 6px; border-radius:99px; opacity:.7;
+      border:1px solid var(--rt-line); white-space:nowrap; }
 .rt-badge.t { border-color:#5c8a5c; }
 .rt-badge.k { border-color:#8a6a5c; }
-.rt-badge.a { border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); }
+.rt-badge.a { border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); opacity:1; }
+.rt-chips { display:flex; gap:4px; flex-wrap:wrap; }
+.rt-chip { font-size:10px; height:22px; padding:0 9px; border-radius:99px; cursor:pointer;
+      border:1px solid var(--rt-line); background:transparent; color:inherit; font-family:inherit;
+      opacity:.75; white-space:nowrap; display:inline-flex; align-items:center; }
+.rt-chip:hover { opacity:1; }
+.rt-chip.on { border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); opacity:1; }
 .rt-grid { display:grid; grid-template-columns:auto 1fr; gap:3px 10px; margin-top:7px; font-size:11px; }
 .rt-k { opacity:.5; white-space:nowrap; }
 .rt-v { word-break:break-word; min-width:0; }
 .rt-code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px;
       line-height:1.5; white-space:pre-wrap; word-break:break-word; margin-top:6px;
-      background:color-mix(in srgb, #000 22%, transparent); border-left:2px solid var(--border-color,#3a3a3a);
+      background:color-mix(in srgb, #000 22%, transparent); border-left:2px solid var(--rt-line);
       border-radius:5px; padding:6px 8px; max-height:110px; overflow:auto; }
 .rt-code.open { max-height:none; }
 .rt-actions { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; align-items:center; }
-.rt-sec { font-size:10px; text-transform:uppercase; letter-spacing:.07em; opacity:.42;
-      padding:5px 2px 0; display:flex; gap:6px; align-items:center; }
-.rt-sec:after { content:""; flex:1; height:1px; background:var(--border-color,#3a3a3a); }
 .rt-empty { opacity:.5; padding:16px; text-align:center; font-size:11.5px; }
 .rt-form { display:flex; flex-direction:column; gap:7px; border:1px solid var(--p-primary-color,#7aa2f7);
-      border-radius:10px; padding:10px; margin:9px 9px 0;
+      border-radius:8px; padding:10px; margin:8px 8px 0;
       background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 70%, transparent); }
 .rt-field { display:flex; flex-direction:column; gap:3px; }
 .rt-field > label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; opacity:.5; }
@@ -71,19 +98,10 @@ const CSS = `
 .rt-hint { font-size:10px; opacity:.45; }
 .rt-flash { animation:rtflash .9s ease-out; }
 @keyframes rtflash { from { border-color:var(--p-primary-color,#7aa2f7); } }
-.rt-native-block { margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color,#3a3a3a); }
-.rt-native-block .rt-sec:after { content:""; flex:1; height:1px; background:var(--border-color,#3a3a3a); }
+.rt-native-block { margin-top:10px; padding-top:8px; border-top:1px solid var(--rt-line); }
 .rt-native-editor { display:flex; flex-direction:column; gap:7px; margin-top:7px;
-      border:1px solid var(--p-primary-color,#7aa2f7); border-radius:9px; padding:9px;
+      border:1px solid var(--p-primary-color,#7aa2f7); border-radius:8px; padding:9px;
       background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 75%, transparent); }
-
-.rt-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
-.rt-card { min-width: 0; }
-.rt-head { min-width: 0; }
-.rt-wf-bar .rt-scroll, .rt-md-bar .rt-scroll { overflow-x: hidden; }
-.rt-wf-bar, .rt-md-bar { height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
-.rt-scroll { flex: 1 1 auto; min-height: 0; }
-.rt-dim { white-space: nowrap; }
 `;
 
 function injectStyles() {
@@ -1072,6 +1090,9 @@ function reportDiag() {
     outerH: panelHost && panelHost.parentElement ? Math.round(panelHost.parentElement.getBoundingClientRect().height) : 0,
     viewH: (document.querySelector(".comfy-vue-side-bar-body") || {}).clientHeight || 0,
   };
+  const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
+    .slice(0, 14)
+    .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
   const styleTag = document.getElementById("rt-styles");
   const card = document.querySelector(".rt-card");
   const styles = {
@@ -1088,6 +1109,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    controlSizes: ctl,
     href: location.href,
     width: innerWidth,
     ready: document.readyState,
@@ -1181,23 +1203,23 @@ function wfFolderSort(a, b) {
 }
 
 function buildWorkflowBar() {
-  const bar = el("div", "rt-wf-bar");
+  const bar = el("div", "rt-wf-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
 
   const head = el("div", "rt-head");
   head.appendChild(el("span", "rt-sec", "workflows"));
   head.appendChild(el("span", "rt-spacer"));
-  const newFolder = btn("+ folder", "icon", async () => {
+  const newFolder = btn("+", "icon", async () => {
     V.wf.newFolder = !V.wf.newFolder;
     paint();
   });
-  newFolder.title = "make a folder (nesting with / allowed)";
+  newFolder.title = "new folder — use / for subfolders";
   head.appendChild(newFolder);
   bar.appendChild(head);
 
   const toolbar = el("div", "rt-head");
-  const search = input("rt-grow", V.wf.q, "search checkpoint, lora, prompt…");
+  const search = input("rt-grow", V.wf.q, "search workflows…");
   search.oninput = () => {
     V.wf.q = search.value;
     paint();
@@ -1250,7 +1272,7 @@ function buildWorkflowBar() {
     card.style.cssText = `padding:6px 8px;margin-left:${depth * 10}px;`;
 
     const row = el("div", "rt-head");
-    const star = btn(w.pinned ? "★" : "☆", "icon", async () => {
+    const star = btn(w.pinned ? "★" : "☆", w.pinned ? "icon on" : "icon", async () => {
       await api("/wf_meta", { rel: w.rel, pinned: !w.pinned });
       await load();
       paint();
@@ -1264,11 +1286,8 @@ function buildWorkflowBar() {
     title.onclick = () => openWorkflow(w.rel);
     row.appendChild(title);
 
-    if (w.checkpoint) row.appendChild(badge(w.checkpoint.replace(/\.safetensors$/, "")));
-    for (const l of w.loras || []) row.appendChild(badge(l.name.replace(/\.safetensors$/, "")));
     row.appendChild(el("span", "rt-spacer"));
-
-    row.appendChild(btn("open", "icon", () => openWorkflow(w.rel)));
+    row.appendChild(btn("open", null, () => openWorkflow(w.rel)));
     row.appendChild(
       btn("✎", "icon", () => {
         V.wf.editing = V.wf.editing === w.rel ? null : w.rel;
@@ -1284,6 +1303,18 @@ function buildWorkflowBar() {
       })
     );
     card.appendChild(row);
+
+    // model badges live on their own line: long checkpoint names pushed the
+    // row buttons onto a second row and made the card look broken.
+    const wfBadges = [];
+    if (w.checkpoint) wfBadges.push(badge(w.checkpoint.replace(/\.safetensors$/, ""), "t"));
+    for (const l of w.loras || []) wfBadges.push(badge(l.name.replace(/\.safetensors$/, ""), "k"));
+    if (w.sampler && w.sampler.sampler) wfBadges.push(badge(w.sampler.sampler));
+    if (wfBadges.length) {
+      const b = el("div", "rt-badges");
+      for (const x of wfBadges) b.appendChild(x);
+      card.appendChild(b);
+    }
 
     if (V.wf.editing === w.rel) {
       const edit = el("div", "rt-head");
@@ -1342,8 +1373,19 @@ function buildWorkflowBar() {
     const label = folder === ROOT_KEY ? "all workflows" : folder.split("/").pop();
     const collapsed = V.wf.collapsed.has(folder) || meta.collapsed;
 
-    const headRow = el("div", "rt-head");
-    headRow.style.cssText = `margin-left:${depth * 10}px;opacity:.95;`;
+    if (folder === ROOT_KEY) {
+      // The root is the lists' home: a heading, not something you fold away.
+      const root = el("div", "rt-root");
+      root.appendChild(el("span", "rt-name", "all workflows"));
+      root.appendChild(el("span", "rt-spacer"));
+      root.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
+      tree.appendChild(root);
+      for (const child of childFolders) folderBlock(child, kids, byFolder, depth);
+      for (const w of items) tree.appendChild(workflowRow(w, depth));
+      return;
+    }
+    const headRow = el("div", "rt-folder");
+    headRow.style.cssText = `margin-left:${depth * 10}px;`;
     const caret = btn(collapsed ? "▸" : "▾", "icon", async () => {
       if (V.wf.collapsed.has(folder)) V.wf.collapsed.delete(folder);
       else V.wf.collapsed.add(folder);
@@ -1358,9 +1400,9 @@ function buildWorkflowBar() {
     });
     pin.title = "pin this folder to the top";
     headRow.appendChild(pin);
-    headRow.appendChild(el("span", "rt-title", label));
-    headRow.appendChild(el("span", "rt-dim", String(items.length + childFolders.length)));
+    headRow.appendChild(el("span", "rt-name", label));
     headRow.appendChild(el("span", "rt-spacer"));
+    headRow.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
     if (V.wf.sort === "custom") {
       const bump = (delta) => async () => {
         const order = (meta.order == null ? 0 : meta.order) + delta;
@@ -1455,7 +1497,7 @@ function modelFolderMetaOf(f) {
 }
 
 function buildModelsBar() {
-  const bar = el("div", "rt-md-bar");
+  const bar = el("div", "rt-md-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
 
@@ -1467,7 +1509,7 @@ function buildModelsBar() {
   bar.appendChild(head);
 
   const toolbar = el("div", "rt-head");
-  const search = input("rt-grow", V.model.q, "search name, base, keyword, tag…");
+  const search = input("rt-grow", V.model.q, "search models…");
   search.oninput = () => {
     V.model.q = search.value;
     paint();
@@ -1501,7 +1543,7 @@ function buildModelsBar() {
     card.style.cssText = `padding:6px 8px;margin-left:${depth * 10}px;`;
 
     const row = el("div", "rt-head");
-    const star = btn(m.pinned ? "★" : "☆", "icon", async () => {
+    const star = btn(m.pinned ? "★" : "☆", m.pinned ? "icon on" : "icon", async () => {
       await api("/model_meta", { filename: m.filename, pinned: !m.pinned });
       await load();
       paint();
@@ -1512,9 +1554,6 @@ function buildModelsBar() {
     const title = el("span", "rt-title", m.name || m.filename);
     title.title = m.filename;
     row.appendChild(title);
-    if (m.model_type) row.appendChild(badge(m.model_type));
-    if (m.file_type) row.appendChild(badge(m.file_type));
-    row.appendChild(badge(rtBytes(m.size)));
     row.appendChild(el("span", "rt-spacer"));
 
     if (m.link) {
@@ -1530,7 +1569,14 @@ function buildModelsBar() {
         paint();
       })
     );
-    card.appendChild(row);
+    const mdBadges = [];
+    if (m.model_type) mdBadges.push(badge(m.model_type, "a"));
+    if (m.file_type) mdBadges.push(badge(m.file_type, "t"));
+    mdBadges.push(badge(rtBytes(m.size)));
+    if (m.base) mdBadges.push(badge(m.base));
+    const mb = el("div", "rt-badges");
+    for (const x of mdBadges) mb.appendChild(x);
+    card.appendChild(mb);
 
     if (V.model.open.has(m.filename)) {
       const detail = el("div", "rt-detail");
@@ -1606,7 +1652,7 @@ function buildModelsBar() {
       const items = modelsSorted(byFolder.get(folder).filter(modelMatches));
       const collapsed = V.model.collapsed.has(folder) || meta.collapsed;
 
-      const fh = el("div", "rt-head");
+      const fh = el("div", "rt-folder");
       fh.appendChild(
         btn(collapsed ? "▸" : "▾", "icon", () => {
           if (V.model.collapsed.has(folder)) V.model.collapsed.delete(folder);
@@ -1621,8 +1667,9 @@ function buildModelsBar() {
       });
       pin.title = "pin this folder to the top";
       fh.appendChild(pin);
-      fh.appendChild(el("span", "rt-title", folder));
-      fh.appendChild(el("span", "rt-dim", String(items.length)));
+      fh.appendChild(el("span", "rt-name", folder));
+      fh.appendChild(el("span", "rt-spacer"));
+      fh.appendChild(el("span", "rt-count", String(items.length)));
       body.appendChild(fh);
 
       if (collapsed) continue;
