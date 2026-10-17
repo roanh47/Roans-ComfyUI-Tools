@@ -4,7 +4,7 @@
 - **Purpose:** Adds **Models** and **Prompts** tabs to the ComfyUI sidebar (next to Workflows).
   Local-only: models live on disk, prompts live on disk, nothing talks to the internet.
 - **Repo:** https://github.com/roanh47/Roans-ComfyUI-Tools
-- **Live install:** `%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes\roans_comfyui_tools\`
+- **Live install (a git clone):** `%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes\Roans-ComfyUI-Tools\`
 - **Target runtime:** ComfyUI Desktop 0.37.0, frontend 1.53.6, Python 3.12 (ComfyUI's own venv)
 - **Dependencies:** none beyond the Python stdlib. Do not add any.
 
@@ -12,31 +12,32 @@
 `custom_nodes/` is scanned at boot. `NODE_CLASS_MAPPINGS` is deliberately **empty** — nothing
 appears in the node search. What makes the tabs work:
 
-- `WEB_DIRECTORY = "./web"` → ComfyUI serves `web/` at `/extensions/roans_comfyui_tools/` and
+- `WEB_DIRECTORY = "./web"` → ComfyUI serves `web/` at `/extensions/Roans-ComfyUI-Tools/` and
   injects the JS at page load
 - `__init__.py` binds aiohttp routes onto `PromptServer.instance.routes` at import time
 
-The folder name is load-bearing: `/extensions/<folder>/` and `WEB_DIRECTORY` must stay in step.
-Renaming the folder to include a space or dash breaks the JS import path
-(`import { app } from "../../scripts/app.js"` is relative to that URL).
+The folder name is load-bearing — it is the URL segment the JS is served from, and the JS imports
+`../../scripts/app.js` relative to it. Keep the folder name, repo name, JS filename and API route
+prefix all spelled `Roans-ComfyUI-Tools`. Dashes and capitals are fine (verified: the folder is
+imported as a module by ComfyUI's loader and the relative import resolves).
 
 ## Layout
 ```
-roans_comfyui_tools/
-├── AGENTS.md                  # this file
-├── README.md                  # user-facing docs
-├── __init__.py                # HTTP routes + hot-reload; no nodes
-├── library.py                 # all the real logic: scanning, parsing, store
-├── data/library.json          # YOUR data — gitignored, never commit
-├── data/library.example.json  # empty template, safe to commit
-└── web/roans_comfyui_tools.js # sidebar tabs (plain DOM, no build step)
+Roans-ComfyUI-Tools/
+├── AGENTS.md                      # this file
+├── README.md                      # user-facing docs, incl. the clone instructions
+├── __init__.py                    # HTTP routes + hot-reload; no nodes
+├── library.py                     # all the real logic: scanning, parsing, store
+├── data/library.json              # YOUR data — gitignored, never commit
+├── data/library.example.json      # empty template, safe to commit
+└── web/Roans-ComfyUI-Tools.js     # sidebar tabs (plain DOM, no build step)
 ```
 
 ## Developing live
 | changed | to see it |
 |---|---|
 | `library.py` | nothing — `_reload_library_if_changed()` reloads it on the next request |
-| `web/roans_comfyui_tools.js` | refresh the browser tab (Ctrl+Shift+R) |
+| `web/Roans-ComfyUI-Tools.js` | refresh the browser tab (Ctrl+Shift+R) |
 | `__init__.py` | restart ComfyUI — routes only bind at boot |
 
 The hot-reload watches `library.py`'s mtime and calls `importlib.reload`. Keep new logic in
@@ -61,19 +62,24 @@ The hot-reload watches `library.py`'s mtime and calls `importlib.reload`. Keep n
 ComfyUI must be running (`curl http://127.0.0.1:8188/system_stats`). Then:
 
 ```bash
-curl -s http://127.0.0.1:8188/roans_comfyui_tools/api/dump | head -40
+curl -s http://127.0.0.1:8188/Roans-ComfyUI-Tools/api/dump | head -40
 ```
 
-Or dry-run the module without ComfyUI — it imports standalone with a fallback for
-`folder_paths`, which is how the parser was tested:
+Without ComfyUI running, dry-run the module against ComfyUI's own interpreter — `library.py`
+imports standalone with a fallback for `folder_paths`, which is how the parser was tested:
 
 ```bash
-python3 -c "import sys; sys.path.insert(0,'<live install path>'); import library; \
-print(len(library.scan_models(force=True)), 'models', len(library.scan_workflows()), 'workflows')"
+cd "%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI"
+.\\.venv\\Scripts\\python.exe -c "import sys; sys.path.insert(0,'custom_nodes/Roans-ComfyUI-Tools'); import library; print(len(library.scan_models(force=True)),'models', len(library.scan_workflows()),'workflows')"
 ```
 
 ## Committing
 ```bash
 git add -A && git commit -m "..." && git push origin main && git push onedrive HEAD:main
 ```
-`origin` = GitHub (code only). `onedrive` = bare repo backup of the same clean history.
+`origin` = GitHub (code only). `onedrive` = bare repo backup (`OneDrive\Coding\Roans-ComfyUI-Tools.git`).
+
+## Gotcha
+Deleting or renaming this folder fails with **"Device or resource busy" / WinError 32** if any
+process has it as its working directory — including a Python kernel started with `cd` inside it.
+Nothing else fixes it: stop the holder or move its cwd out first.
