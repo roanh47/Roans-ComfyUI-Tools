@@ -1113,9 +1113,25 @@ function reportDiag() {
         before,
         after: String(V.wf.newFolder),
         slotChildren: document.querySelectorAll(".rt-folderslot > *").length,
-        buttonTag: b.tagName,
-        hasOnclick: typeof b.onclick === "function",
       };
+      // end-to-end: name it and press create, the same way a user would
+      const field = document.querySelector(".rt-folderslot input");
+      const createBtn = [...document.querySelectorAll(".rt-folderslot .rt-btn")].find(
+        (x) => x.textContent === "create"
+      );
+      if (field && createBtn) {
+        field.value = "_rt_probe";
+        createBtn.click();
+        setTimeout(async () => {
+          try {
+            const st = await api("/state");
+            RT_STATS.selfTest.created = st.wf_folders.includes("_rt_probe");
+            RT_STATS.selfTest.folders = st.wf_folders;
+          } catch (e) {
+            RT_STATS.selfTest.created = "error: " + e;
+          }
+        }, 900);
+      }
     }
   }
   const hit = (() => {
