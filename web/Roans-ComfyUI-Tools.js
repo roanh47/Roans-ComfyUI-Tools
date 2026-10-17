@@ -789,7 +789,8 @@ let repaint = () => {};
 // simply has no badge (img.onerror removes it), so nothing personal goes public.
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
-const AVATAR_GAP = 3; // px — spacing: 3px up from the bottom, 3px left from the right
+const AVATAR_GAP = 3; // px — spacing up from the bottom edge
+const AVATAR_LEFT = 6; // px — total leftward offset from the right edge (3px gap + 3px, since the button's own padding eats 3px)
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
 
 /**
@@ -817,7 +818,7 @@ function decorateNativeTabs() {
       "position:absolute",
       "right:0",
       `bottom:${AVATAR_GAP}px`,
-      `transform:translateX(-${AVATAR_GAP}px)`,
+      `transform:translateX(-${AVATAR_LEFT}px)`,
       `width:${AVATAR_SIZE}px`,
       `height:${AVATAR_SIZE}px`,
       "border-radius:50%",
