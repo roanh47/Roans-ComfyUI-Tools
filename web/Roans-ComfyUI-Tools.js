@@ -114,7 +114,7 @@ const CSS = `
       background:var(--rt-surface,#262729); border-radius:6px; box-shadow:0 10px 30px rgba(0,0,0,.5);
       display:flex; flex-direction:column; }
 .rt-menu-item { display:flex; align-items:center; height:28px; padding:0 10px; border:0; border-radius:4px;
-      background:transparent; color:var(--fg-color,#fff); font:inherit; font-size:13px; text-align:left;
+      background:transparent; color:var(--fg-color,#fff); font:inherit; font-size:13px; font-weight:400; text-align:left;
       cursor:pointer; white-space:nowrap; }
 .rt-menu-item:hover { background:var(--rt-surface-hover,#313235); }
 .rt-menu-item.danger:hover { background:#4a2426; color:#fca5a5; }
@@ -1579,10 +1579,10 @@ function menuFor(kind, key) {
             { header: "move to folder" },
           ]
         : [{ header: "add to folder" }]),
+      { label: "New folder…", action: () => newFolderFiling(w.rel) },
       ...folderList()
         .filter((f) => f !== (w.folder || ""))
         .map((f) => ({ label: f, action: () => moveWorkflowTo(w.rel, f) })),
-      ...(folderList().length ? [] : [{ label: "(no folders yet)", disabled: true }]),
       { separator: true },
       { label: "Move to trash", danger: true, action: () => trashWorkflow(w) },
     ];
@@ -1645,6 +1645,15 @@ if (!window.__rtMenuHooked) {
 
 function folderList() {
   return (S.wfFolders || []).slice().sort();
+}
+
+// "New folder…" from a workflow's menu: make the folder AND file the workflow
+// into it, so there is never a dead end when no folders exist yet.
+async function newFolderFiling(rel) {
+  if (!RT_FOLDER_INPUT) return;
+  RT_FOLDER_INPUT("", async (created) => {
+    if (created && rel) await moveWorkflowTo(rel, created);
+  });
 }
 
 async function moveWorkflowTo(rel, folder) {
@@ -1755,7 +1764,7 @@ function buildWorkflowBar() {
   tree.dataset.rtKey = "";
   bar.appendChild(tree);
 
-  RT_FOLDER_INPUT = (prefix) => {
+  RT_FOLDER_INPUT = (prefix, onCreated) => {
     V.wf.newFolder = prefix || "";
     folderSlot.innerHTML = "";
     const row = el("div", "rt-newfolder");
@@ -1763,9 +1772,11 @@ function buildWorkflowBar() {
     const go = btn("create", "pri", async () => {
       if (!name.value.trim()) return;
       try {
-        await api("/wf_mkdir", { folder: name.value.trim() });
+        const created = name.value.trim();
+        await api("/wf_mkdir", { folder: created });
         await load(true);
         toast("folder created");
+        if (onCreated) await onCreated(created);
       } catch (e) {
         toast("could not create it: " + e, "error");
       }
