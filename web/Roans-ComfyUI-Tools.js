@@ -933,6 +933,8 @@ function hideNativeSiblings(host, bar) {
   const walk = (node) => {
     for (const child of [...node.children]) {
       if (child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
+      // Our own bar contains itself — descending into it would hide its contents.
+      if (child === bar) continue;
       if (child.contains(bar)) {
         walk(child); // keep descending along the path to our bar
         continue;
