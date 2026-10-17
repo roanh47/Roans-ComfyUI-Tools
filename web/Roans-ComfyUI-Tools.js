@@ -168,6 +168,61 @@ const V = {
 
 let uiStamp = null;
 let RT_FOLDER_INPUT = null;
+
+// An interaction log: every pointer/context event on our own panels, plus what
+// the menu looked like 60ms later. This is how a right-click that never reaches
+// us becomes visible from the outside.
+const RT_EVENTS = [];
+function rtLogEvent(type, e) {
+  const t = e.target;
+  const cls = (t && t.className ? t.className.toString() : "").slice(0, 40);
+  RT_EVENTS.push({
+    type,
+    button: e.button,
+    onRow: !!(t && t.closest && t.closest(".rt-card, .rt-folder")),
+    inPanel: !!(t && t.closest && t.closest(".rt-app")),
+    target: t ? `${t.tagName.toLowerCase()}.${cls}` : "?",
+  });
+  if (type === "contextmenu" || type === "pointerdown") {
+    setTimeout(() => {
+      const m = document.querySelector(".rt-menu");
+      RT_EVENTS.push({
+        type: `${type}:after`,
+        menus: document.querySelectorAll(".rt-menu").length,
+        menu: m
+          ? (() => {
+              const r = m.getBoundingClientRect();
+              const cs = getComputedStyle(m);
+              const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+              return {
+                at: `${Math.round(r.left)},${Math.round(r.top)}`,
+                size: `${Math.round(r.width)}x${Math.round(r.height)}`,
+                z: cs.zIndex,
+                pos: cs.position,
+                display: cs.display,
+                visibility: cs.visibility,
+                topmost: mid ? `${mid.tagName.toLowerCase()}.${(mid.className || "").toString().slice(0, 24)}` : "none",
+              };
+            })()
+          : null,
+      });
+    }, 60);
+  }
+  if (RT_EVENTS.length > 60) RT_EVENTS.splice(0, RT_EVENTS.length - 60);
+}
+if (!window.__rtEvHooked) {
+  window.__rtEvHooked = true;
+  for (const type of ["contextmenu", "pointerdown", "click"]) {
+    document.addEventListener(
+      type,
+      (e) => {
+        if (e.target && e.target.closest && e.target.closest(".rt-app, .rt-menu")) rtLogEvent(type, e);
+      },
+      true
+    );
+  }
+}
+
 const RT_STATS = { wfBuilds: 0, mdBuilds: 0, injections: 0, hides: 0, observerPasses: 0 };
 let pollFails = 0;
 
@@ -651,61 +706,7 @@ function promptEditor(host, preset, onDone) {
 }
 
 function renderPrompts(root) {
-  // An interaction log: every pointer/context event on our own panels, plus what
-// the menu looked like 60ms later. This is how a right-click that never reaches
-// us becomes visible from the outside.
-const RT_EVENTS = [];
-function rtLogEvent(type, e) {
-  const t = e.target;
-  const cls = (t && t.className ? t.className.toString() : "").slice(0, 40);
-  RT_EVENTS.push({
-    type,
-    button: e.button,
-    onRow: !!(t && t.closest && t.closest(".rt-card, .rt-folder")),
-    inPanel: !!(t && t.closest && t.closest(".rt-app")),
-    target: t ? `${t.tagName.toLowerCase()}.${cls}` : "?",
-  });
-  if (type === "contextmenu" || type === "pointerdown") {
-    setTimeout(() => {
-      const m = document.querySelector(".rt-menu");
-      RT_EVENTS.push({
-        type: `${type}:after`,
-        menus: document.querySelectorAll(".rt-menu").length,
-        menu: m
-          ? (() => {
-              const r = m.getBoundingClientRect();
-              const cs = getComputedStyle(m);
-              const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-              return {
-                at: `${Math.round(r.left)},${Math.round(r.top)}`,
-                size: `${Math.round(r.width)}x${Math.round(r.height)}`,
-                z: cs.zIndex,
-                pos: cs.position,
-                display: cs.display,
-                visibility: cs.visibility,
-                topmost: mid ? `${mid.tagName.toLowerCase()}.${(mid.className || "").toString().slice(0, 24)}` : "none",
-              };
-            })()
-          : null,
-      });
-    }, 60);
-  }
-  if (RT_EVENTS.length > 60) RT_EVENTS.splice(0, RT_EVENTS.length - 60);
-}
-if (!window.__rtEvHooked) {
-  window.__rtEvHooked = true;
-  for (const type of ["contextmenu", "pointerdown", "click"]) {
-    document.addEventListener(
-      type,
-      (e) => {
-        if (e.target && e.target.closest && e.target.closest(".rt-app, .rt-menu")) rtLogEvent(type, e);
-      },
-      true
-    );
-  }
-}
-
-injectStyles();
+  injectStyles();
   root.innerHTML = "";
   const wrap = el("div", "rt");
   root.appendChild(wrap);
