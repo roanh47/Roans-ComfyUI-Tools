@@ -167,6 +167,7 @@ const V = {
 };
 
 let uiStamp = null;
+let RT_FOLDER_INPUT = null;
 const RT_STATS = { wfBuilds: 0, mdBuilds: 0, injections: 0, hides: 0, observerPasses: 0 };
 let pollFails = 0;
 
@@ -1389,14 +1390,30 @@ function reportDiag() {
 }
 
 async function sendDiag() {
+  let body;
+  try {
+    body = JSON.stringify(reportDiag());
+  } catch (e) {
+    // the report itself failing must never be silent again
+    try {
+      await fetch("/Roans-ComfyUI-Tools/api/err", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ where: "reportDiag", message: String(e && e.message), stack: String((e && e.stack) || "").slice(0, 500) }),
+      });
+    } catch (_) {
+      /* nothing else to try */
+    }
+    return;
+  }
   try {
     await fetch("/Roans-ComfyUI-Tools/api/diag", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(reportDiag()),
+      body,
     });
   } catch (e) {
-    /* diagnostics are best-effort */
+    /* network hiccup: next tick will retry */
   }
 }
 
@@ -1555,7 +1572,7 @@ function menuFor(kind, key) {
   }
   if (kind === "space") {
     return [
-      { label: "New folder…", action: () => openFolderInput("") },
+      { label: "New folder…", action: () => RT_FOLDER_INPUT && RT_FOLDER_INPUT("") },
       { separator: true },
       { label: "Rescan library", action: async () => { await load(true); paint(); toast("rescanned"); } },
     ];
@@ -1564,7 +1581,7 @@ function menuFor(kind, key) {
     const folder = key;
     const meta = wfFolderMetaOf(folder);
     return [
-      { label: "New subfolder…", action: () => openFolderInput(folder) },
+      { label: "New subfolder…", action: () => RT_FOLDER_INPUT && RT_FOLDER_INPUT(folder) },
       { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; paint(); } },
       { label: meta.pinned ? "Unpin folder" : "Pin folder to top", action: async () => {
           await api("/wf_folder", { folder, pinned: !meta.pinned });
@@ -1721,7 +1738,7 @@ function buildWorkflowBar() {
   tree.dataset.rtKey = "";
   bar.appendChild(tree);
 
-  function openFolderInput(prefix) {
+  RT_FOLDER_INPUT = (prefix) => {
     V.wf.newFolder = prefix || "";
     folderSlot.innerHTML = "";
     const row = el("div", "rt-newfolder");
@@ -1750,7 +1767,7 @@ function buildWorkflowBar() {
     row.append(name, go, cancel);
     folderSlot.appendChild(row);
     name.focus();
-  }
+  };
 
   function workflowRow(w, depth) {
     const card = el("div", "rt-card");
