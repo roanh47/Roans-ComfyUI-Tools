@@ -1014,76 +1014,6 @@ function registerTab(base, painter, Vue) {
  * which tab is active and mount our own panel beside the strip while ours is
  * selected, then remove it from view when another tab is picked.
  */
-let fallbackPanel = null;
-function mountFallbackPanel(painter) {
-  if (fallbackPanel) return;
-  const panel = el("div", "rt-float");
-  panel.style.cssText = [
-    "position:fixed",
-    "left:46px",
-    "top:44px",
-    "bottom:46px",
-    "width:400px",
-    "max-width:46vw",
-    "background:var(--comfy-menu-bg,#1c1c1c)",
-    "border:1px solid var(--border-color,#3a3a3a)",
-    "border-radius:10px",
-    "box-shadow:0 10px 30px rgba(0,0,0,.5)",
-    "z-index:60",
-    "display:none",
-    "overflow:hidden",
-  ].join(";");
-  const host = el("div", "rt-host");
-  host.style.cssText = "height:100%;overflow:hidden;";
-  panel.appendChild(host);
-  document.body.appendChild(panel);
-  fallbackPanel = panel;
-
-  const paint = async () => {
-    try {
-      await load();
-      painter(host);
-      repaint = paint;
-    } catch (e) {
-      host.innerHTML = `<div style="padding:12px;font-size:12px;opacity:.7">library api unreachable<br>${e}</div>`;
-    }
-  };
-
-  const tick = () => {
-    let activeId = null;
-    try {
-      const s = app.extensionManager?.sidebarTab;
-      const store = s && typeof s === "object" && "value" in s ? s.value : s;
-      activeId = store?.activeSidebarTabId;
-    } catch (e) {}
-
-    const btn = document.querySelector('[data-testid="roansPrompts-tab-button"]');
-    if (btn && !btn.dataset.rtWired) {
-      btn.dataset.rtWired = "1";
-      btn.addEventListener("click", () => {
-        panel.dataset.forced = panel.style.display === "block" ? "0" : "1";
-        tick();
-      });
-    }
-
-    // Never show a second copy: if our panel is already in the page somewhere outside
-    // this fallback container, ComfyUI rendered it itself and ours stays hidden.
-    // (Check the class the UI actually uses — `.rt-host` / `.rt`.)
-    const rendered = Array.from(document.querySelectorAll(".rt-host, .rt"));
-    const sidebarHasOurs = rendered.some((e) => !panel.contains(e));
-
-    const on = activeId === "roansPrompts" || panel.dataset.forced === "1";
-    panel.style.display = on && !sidebarHasOurs ? "block" : "none";
-    if (on && !host.dataset.painted) {
-      host.dataset.painted = "1";
-      paint();
-    }
-  };
-  tick();
-  setInterval(tick, 400);
-  console.log("[Roans-ComfyUI-Tools] panel mounted beside the sidebar");
-}
-
 app.registerExtension({
   name: "roans.comfyui.tools",
   async setup() {
@@ -1116,7 +1046,8 @@ app.registerExtension({
 
     // if the tab registered as a component, ComfyUI renders the panel itself, so we
     // do not mount a second one; the fallback exists only for the failed-vue case
-    if (mode !== "vue") mountFallbackPanel(renderPrompts);
+    // ComfyUI renders the tab's own panel (the custom/vue tab contract), so there is
+    // deliberately no second, floating copy of it.
 
     pollTimer = setInterval(pollUi, 4000);
     console.log("[Roans-ComfyUI-Tools] setup complete; enhancing ComfyUI's Models panel");
