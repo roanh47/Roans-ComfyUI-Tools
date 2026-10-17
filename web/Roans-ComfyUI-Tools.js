@@ -1354,6 +1354,9 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    menuOpened: RT_STATS.menuOpened || 0,
+    lastMenuAt: RT_STATS.lastMenuAt || null,
+    lastMenuError: RT_STATS.lastMenuError || null,
     events: RT_EVENTS.slice(-24),
     rowCheck,
     menuProbe: RT_STATS.menuProbe,
@@ -1506,7 +1509,14 @@ function contextMenu(ev, items) {
     };
     menu.appendChild(item);
   }
-  document.body.appendChild(menu);
+  // Append inside the app root (not body): that keeps the menu in the same
+  // stacking context as the UI, so nothing ComfyUI draws can cover it.
+  const host =
+    document.querySelector(".sidebar-content-container") ||
+    document.querySelector("#app") ||
+    document.body;
+  host.appendChild(menu);
+  menu.style.zIndex = "2147483000";
   const r = menu.getBoundingClientRect();
   menu.style.left = `${Math.min(ev.clientX, window.innerWidth - r.width - 8)}px`;
   menu.style.top = `${Math.min(ev.clientY, window.innerHeight - r.height - 8)}px`;
@@ -1565,7 +1575,12 @@ if (!window.__rtMenuHooked) {
       const row = ev.target && ev.target.closest && ev.target.closest("[data-rt-kind]");
       if (!row) return;
       const items = menuFor(row.dataset.rtKind, row.dataset.rtKey);
-      if (!items) return;
+      RT_STATS.menuOpened = (RT_STATS.menuOpened || 0) + 1;
+      RT_STATS.lastMenuAt = `${Math.round(ev.clientX)},${Math.round(ev.clientY)}`;
+      if (!items) {
+        RT_STATS.lastMenuError = `no menu defined for ${row.dataset.rtKind}:${row.dataset.rtKey}`;
+        return;
+      }
       ev.preventDefault();
       ev.stopPropagation();
       contextMenu(ev, items);
