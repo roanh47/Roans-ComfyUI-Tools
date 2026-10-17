@@ -161,6 +161,44 @@ async def post_wf_folder(request):
     return web.json_response({"ok": True, "folder": folder, "meta": entry})
 
 
+async def post_wf_delete(request):
+    """Move a workflow to .trash (recoverable)."""
+    rel = (await _body(request)).get("rel") or ""
+    try:
+        moved = library.wf_delete(rel)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "trashed": moved})
+
+
+async def post_wf_rmdir(request):
+    """Move a folder to .trash."""
+    folder = (await _body(request)).get("folder") or ""
+    try:
+        moved = library.wf_rmdir(folder)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "trashed": moved, "folders": library.wf_folders()})
+
+
+async def post_wf_rename_folder(request):
+    """Rename a folder on disk."""
+    data = await _body(request)
+    try:
+        new = library.wf_rename_folder(data.get("folder") or "", data.get("name") or "")
+    except FileExistsError as exc:
+        return web.json_response({"error": f"there is already a folder called {exc}"}, status=409)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "folder": new, "folders": library.wf_folders()})
+
+
+async def post_wf_order(request):
+    """Save the manual order of a list of workflows."""
+    rels = (await _body(request)).get("rels") or []
+    return web.json_response({"ok": True, "ordered": library.wf_set_order(rels)})
+
+
 async def post_wf_mkdir(request):
     """Create a real folder (nested paths allowed) in the workflows directory."""
     folder = (await _body(request)).get("folder") or ""
@@ -298,6 +336,10 @@ ROUTES = {
     ("POST", "wf_meta"): post_wf_meta,
     ("POST", "wf_folder"): post_wf_folder,
     ("POST", "wf_mkdir"): post_wf_mkdir,
+    ("POST", "wf_delete"): post_wf_delete,
+    ("POST", "wf_rmdir"): post_wf_rmdir,
+    ("POST", "wf_rename_folder"): post_wf_rename_folder,
+    ("POST", "wf_order"): post_wf_order,
     ("POST", "wf_move"): post_wf_move,
     ("POST", "model_meta"): post_model_meta,
     ("POST", "relink"): post_relink,

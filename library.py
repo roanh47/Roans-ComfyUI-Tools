@@ -571,14 +571,17 @@ def wf_abs(rel):
 
 
 def wf_folders():
-    """Every folder under the workflows root, nested ones included."""
+    """Every folder under the workflows root, nested ones included.
+
+    Dot-folders (.trash) are bookkeeping, not content: they stay hidden."""
     root = workflows_dir()
     if not os.path.isdir(root):
         return []
     out = []
-    for dirpath, _dirs, _files in os.walk(root):
+    for dirpath, dirs, _files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         rel = os.path.relpath(dirpath, root).replace("\\", "/")
-        if rel != ".":
+        if rel != "." and not rel.startswith("."):
             out.append(rel)
     return sorted(out)
 
@@ -610,6 +613,110 @@ def wf_move(rel, folder):
     return wf_rel(dest)
 
 
+def wf_trash_dir():
+    """Deletions move here instead of disappearing."""
+    d = os.path.join(workflows_dir(), ".trash")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _unique(path):
+    if not os.path.exists(path):
+        return path
+    base, n = path, 1
+    while os.path.exists(f"{base}-{n}"):
+        n += 1
+    return f"{base}-{n}"
+
+
+def _move_meta_prefix(store, old, new):
+    """Keep folder metadata and per-workflow metadata pointing at the new path."""
+    for key in list(store.get("wf_folders", {})):
+        if key == old or key.startswith(old + "/"):
+            store["wf_folders"][new + key[len(old):]] = store["wf_folders"].pop(key)
+    for key in list(store.get("wf_meta", {})):
+        if key == old or key.startswith(old + "/"):
+            store["wf_meta"][new + key[len(old):]] = store["wf_meta"].pop(key)
+
+
+def wf_delete(rel):
+    """Move one workflow into .trash — recoverable, never a hard delete."""
+    src = wf_abs(rel)
+    if not os.path.isfile(src):
+        raise FileNotFoundError(rel)
+    if rel.split("/")[0] == ".trash":
+        raise ValueError("that file is already in the trash")
+    dest = _unique(os.path.join(wf_trash_dir(), os.path.basename(src)))
+    os.replace(src, dest)
+    store = load_store()
+    store.get("wf_meta", {}).pop(rel, None)
+    save_store(store)
+    return os.path.basename(dest)
+
+
+def wf_rmdir(folder):
+    """Move a whole folder into .trash, metadata included."""
+    folder = (folder or "").strip().strip("/")
+    if not folder:
+        raise ValueError("refusing to delete the root")
+    src = wf_abs(folder)
+    if not os.path.isdir(src):
+        raise FileNotFoundError(folder)
+    dest = _unique(os.path.join(wf_trash_dir(), os.path.basename(folder)))
+    os.replace(src, dest)
+    store = load_store()
+    _move_meta_prefix(store, folder, ".trash/" + os.path.basename(dest) if False else folder)
+    # the folder is gone, so its metadata goes too
+    for key in list(store.get("wf_folders", {})):
+        if key == folder or key.startswith(folder + "/"):
+            store["wf_folders"].pop(key, None)
+    for key in list(store.get("wf_meta", {})):
+        if key == folder or key.startswith(folder + "/"):
+            store["wf_meta"].pop(key, None)
+    save_store(store)
+    return wf_rel(dest)
+
+
+def wf_rename_folder(folder, name):
+    """Rename a folder on disk, keeping its metadata and order."""
+    folder = (folder or "").strip().strip("/")
+    name = (name or "").strip().strip("/")
+    if not folder:
+        raise ValueError("the root has no name")
+    if not name or "/" in name or name.startswith("."):
+        raise ValueError("a folder name cannot be empty, contain / or start with a dot")
+    src = wf_abs(folder)
+    if not os.path.isdir(src):
+        raise FileNotFoundError(folder)
+    parent = os.path.dirname(folder)
+    target_rel = f"{parent}/{name}" if parent else name
+    dest = wf_abs(target_rel)
+    if os.path.exists(dest):
+        raise FileExistsError(target_rel)
+    os.rename(src, dest)
+    store = load_store()
+    _move_meta_prefix(store, folder, target_rel)
+    _move_meta_prefix(store, "", "")
+    for key in list(store.get("wf_meta", {})):
+        if key.startswith(folder + "/"):
+            store["wf_meta"][target_rel + key[len(folder):]] = store["wf_meta"].pop(key)
+    save_store(store)
+    return target_rel
+
+
+def wf_set_order(rels):
+    """Remember a manual order: the list position becomes the stored index."""
+    store = load_store()
+    n = 0
+    for i, rel in enumerate(rels or []):
+        if not isinstance(rel, str) or not rel.lower().endswith(".json"):
+            continue
+        store["wf_meta"].setdefault(rel, {})["order"] = i
+        n += 1
+    save_store(store)
+    return n
+
+
 def scan_workflows(force=False):
     """Every workflow under the root, nested folders included, meta merged in."""
     root = workflows_dir()
@@ -618,7 +725,8 @@ def scan_workflows(force=False):
     store = load_store()
     meta = store.get("wf_meta", {})
     items = []
-    for dirpath, _dirs, filenames in os.walk(root):
+    for dirpath, dirs, filenames in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]  # skip .trash
         for name in sorted(filenames):
             if not name.lower().endswith(".json"):
                 continue
