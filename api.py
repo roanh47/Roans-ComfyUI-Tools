@@ -7,6 +7,7 @@ endpoint takes effect on the next request — no ComfyUI restart, ever.
 
 import json
 import os
+import time
 
 from aiohttp import web
 
@@ -208,8 +209,12 @@ async def post_diag(request):
     page structure when no browser console is available."""
     global _DIAG
     data = await _body(request)
-    _DIAG = data
-    return web.json_response({"ok": True, "keys": sorted(data.keys())})
+    client = str(data.get("client") or "unknown")
+    data["_received"] = time.time()
+    _DIAG[client] = data            # keyed per page: two open tabs cannot overwrite each other
+    if len(_DIAG) > 10:
+        _DIAG.pop(min(_DIAG, key=lambda k: _DIAG[k].get("_received", 0)), None)
+    return web.json_response({"ok": True, "client": client, "clients": sorted(_DIAG)})
 
 
 async def get_diag(request):

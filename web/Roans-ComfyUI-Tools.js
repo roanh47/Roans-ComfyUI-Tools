@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 
 const API = "/Roans-ComfyUI-Tools/api";
+const RT_CLIENT = Math.random().toString(36).slice(2, 8); // one id per page load
 
 /* ------------------------------------------------------------------ styling */
 
@@ -1066,6 +1067,7 @@ function reportDiag() {
     cardFont: card ? getComputedStyle(card).fontSize : "",
   };
   return {
+    client: RT_CLIENT,
     dpr: devicePixelRatio,
     styles,
     fill,
