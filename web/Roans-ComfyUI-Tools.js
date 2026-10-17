@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 
-const API = "/roans_comfyui_tools/api";
+const API = "/Roans-ComfyUI-Tools/api";
 
 const css = {
   wrap: "display:flex;flex-direction:column;gap:7px;padding:9px;font-size:12px;color:var(--fg-color,#ddd);height:100%;box-sizing:border-box;",
@@ -45,7 +45,7 @@ function toast(detail, severity = "success") {
   try {
     app.extensionManager.toast?.add({ severity, summary: "Roans ComfyUI Tools", detail, life: 2200 });
   } catch (e) {
-    console.log("[roans_comfyui_tools]", detail);
+    console.log("[Roans-ComfyUI-Tools]", detail);
   }
 }
 async function api(path, body) {
@@ -399,6 +399,6 @@ app.registerExtension({
 
     make("hermesModels", "pi pi-database", "Models", "Local models, links and notes", renderModels);
     make("hermesPrompts", "pi pi-comment", "Prompts", "Saved prompts plus prompts pulled from your workflows", renderPrompts);
-    console.log("[roans_comfyui_tools] Models + Prompts tabs registered");
+    console.log("[Roans-ComfyUI-Tools] Models + Prompts tabs registered");
   },
 });

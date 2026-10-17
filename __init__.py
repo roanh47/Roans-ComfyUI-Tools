@@ -51,16 +51,16 @@ def _reload_library_if_changed():
         if stamp != _LIB_STAMP:
             _LIB_STAMP = stamp
             importlib.reload(library)
-            print("[roans_comfyui_tools] library.py reloaded")
+            print("[Roans-ComfyUI-Tools] library.py reloaded")
     except Exception as exc:  # never let a hot-reload bug take down a request
-        print(f"[roans_comfyui_tools] reload skipped: {exc}")
+        print(f"[Roans-ComfyUI-Tools] reload skipped: {exc}")
 
 
 def _body(request):
     return request.get_json(silent=True) or {}
 
 
-@routes.get("/roans_comfyui_tools/api/state")
+@routes.get("/Roans-ComfyUI-Tools/api/state")
 async def api_state(request):
     _reload_library_if_changed()
     force = request.query.get("force") == "1"
@@ -74,7 +74,7 @@ async def api_state(request):
     )
 
 
-@routes.get("/roans_comfyui_tools/api/dump")
+@routes.get("/Roans-ComfyUI-Tools/api/dump")
 async def api_dump(request):
     """Everything the tabs show, as plain JSON — handy for grep and scripts."""
     return web.Response(
@@ -91,7 +91,7 @@ async def api_dump(request):
     )
 
 
-@routes.post("/roans_comfyui_tools/api/model")
+@routes.post("/Roans-ComfyUI-Tools/api/model")
 async def api_model(request):
     data = _body(request)
     name = data.get("filename") or data.get("file")
@@ -107,7 +107,7 @@ async def api_model(request):
     return web.json_response({"ok": True, "model": entry})
 
 
-@routes.post("/roans_comfyui_tools/api/prompt")
+@routes.post("/Roans-ComfyUI-Tools/api/prompt")
 async def api_prompt(request):
     data = _body(request)
     positive = (data.get("positive") or "").strip()
@@ -134,7 +134,7 @@ async def api_prompt(request):
     return web.json_response({"ok": True, "prompt": entry})
 
 
-@routes.post("/roans_comfyui_tools/api/prompt_delete")
+@routes.post("/Roans-ComfyUI-Tools/api/prompt_delete")
 async def api_prompt_delete(request):
     pid = _body(request).get("id")
     store = library.load_store()
@@ -144,7 +144,7 @@ async def api_prompt_delete(request):
     return web.json_response({"ok": True, "removed": before - len(store["prompts"])})
 
 
-@routes.get("/roans_comfyui_tools/api/workflow")
+@routes.get("/Roans-ComfyUI-Tools/api/workflow")
 async def api_workflow(request):
     """The raw workflow graph, so the UI can open a file straight onto the canvas."""
     name = os.path.basename(request.query.get("file", ""))
@@ -155,7 +155,7 @@ async def api_workflow(request):
         return web.json_response(json.load(fh))
 
 
-@routes.post("/roans_comfyui_tools/api/rescan")
+@routes.post("/Roans-ComfyUI-Tools/api/rescan")
 async def api_rescan(request):
     items = library.scan_models(force=True)
     return web.json_response({"ok": True, "count": len(items)})

@@ -3,8 +3,53 @@
 Extra sidebar tabs in ComfyUI: **Models** and **Prompts**.
 
 Nothing appears in the node graph — this folder exists so ComfyUI loads
-`web/roans_comfyui_tools.js` as a frontend extension and the HTTP routes in `__init__.py`
+`web/Roans-ComfyUI-Tools.js` as a frontend extension and the HTTP routes in `__init__.py`
 onto its own server. `NODE_CLASS_MAPPINGS` is deliberately empty.
+
+## Install
+
+Clone into your `custom_nodes` folder. ComfyUI scans that folder on every boot, so there is
+no service, startup entry or process to maintain.
+
+cmd.exe:
+
+```bat
+cd /d "%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes"
+git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git
+```
+
+PowerShell:
+
+```powershell
+cd "$env:LOCALAPPDATA\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes"
+git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git
+```
+
+Git Bash / MSYS:
+
+```bash
+cd "$LOCALAPPDATA/Comfy-Desktop/ComfyUI-Installs/ComfyUI/ComfyUI/custom_nodes"
+git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git
+```
+
+No target folder argument — git uses the repo name, and the folder has to stay
+`Roans-ComfyUI-Tools`. ComfyUI serves it at `/extensions/Roans-ComfyUI-Tools/`, which is where
+the sidebar JS loads from.
+
+Comfy Desktop installs under `AppData\Local`, so it is `%LOCALAPPDATA%`. `%APPDATA%` points at
+`AppData\Roaming`, where ComfyUI is *not* installed.
+
+Then restart ComfyUI and two tabs appear next to Workflows: **Models** and **Prompts**.
+
+Updating later:
+
+```bash
+cd "%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes\Roans-ComfyUI-Tools"
+git pull
+```
+
+`data/library.json` is gitignored, so pulling/updating never touches your links, notes or saved
+prompts. Back that file up yourself if you care about it.
 
 ## What each tab does
 
@@ -42,13 +87,13 @@ attached workflow straight into the graph.
 
 | route | what |
 |---|---|
-| `GET /roans_comfyui_tools/api/state` | everything both tabs render (`?force=1` rescans) |
-| `GET /roans_comfyui_tools/api/dump` | same as pretty JSON — handy for grep/scripts |
-| `POST /roans_comfyui_tools/api/model` | save name/type/file type/version/base/link/why/rank/keyword/notes |
-| `POST /roans_comfyui_tools/api/prompt` | create or update a saved prompt |
-| `POST /roans_comfyui_tools/api/prompt_delete` | remove a saved prompt |
-| `GET /roans_comfyui_tools/api/workflow?file=X.json` | raw workflow graph, for *open in canvas* |
-| `POST /roans_comfyui_tools/api/rescan` | drop the folder cache |
+| `GET /Roans-ComfyUI-Tools/api/state` | everything both tabs render (`?force=1` rescans) |
+| `GET /Roans-ComfyUI-Tools/api/dump` | same as pretty JSON — handy for grep/scripts |
+| `POST /Roans-ComfyUI-Tools/api/model` | save name/type/file type/version/base/link/why/rank/keyword/notes |
+| `POST /Roans-ComfyUI-Tools/api/prompt` | create or update a saved prompt |
+| `POST /Roans-ComfyUI-Tools/api/prompt_delete` | remove a saved prompt |
+| `GET /Roans-ComfyUI-Tools/api/workflow?file=X.json` | raw workflow graph, for *open in canvas* |
+| `POST /Roans-ComfyUI-Tools/api/rescan` | drop the folder cache |
 
 ## Developing it live
 
@@ -59,49 +104,13 @@ ComfyUI restart.
 | you changed | to see it |
 |---|---|
 | `library.py` | nothing, it's live |
-| `web/roans_comfyui_tools.js` | refresh the browser tab (Ctrl+Shift+R) |
+| `web/Roans-ComfyUI-Tools.js` | refresh the browser tab (Ctrl+Shift+R) |
 | `__init__.py` (routes) | restart ComfyUI — aiohttp routes only bind at boot |
-
-## Install
-
-ComfyUI scans `custom_nodes/` on every boot, so there is no service, startup entry or process
-to maintain. Delete the folder to uninstall; clone it back to reinstall. (`custom_nodes/` is
-gitignored by ComfyUI itself, so ComfyUI updates leave it alone.)
-
-Comfy Desktop installs under `AppData\Local`, so `%LOCALAPPDATA%` is the variable that resolves —
-`%APPDATA%` points at `AppData\Roaming`, where ComfyUI is *not* installed.
-
-cmd.exe:
-
-```bat
-cd /d "%LOCALAPPDATA%\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes"
-git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git roans_comfyui_tools
-```
-
-PowerShell:
-
-```powershell
-cd "$env:LOCALAPPDATA\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes"
-git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git roans_comfyui_tools
-```
-
-Git Bash / MSYS:
-
-```bash
-cd "$LOCALAPPDATA/Comfy-Desktop/ComfyUI-Installs/ComfyUI/ComfyUI/custom_nodes"
-git clone https://github.com/roanh47/Roans-ComfyUI-Tools.git roans_comfyui_tools
-```
-
-The folder name has to stay `roans_comfyui_tools` (underscores, no spaces) — ComfyUI serves it
-at `/extensions/roans_comfyui_tools/`, which is where the sidebar JS loads from.
-
-Then restart ComfyUI and two tabs appear next to Workflows: **Models** and **Prompts**.
-
-`data/library.json` is gitignored, so a fresh clone starts empty and your model links, notes and
-saved prompts are never committed. Back that file up yourself if you care about it.
 
 ## Notes
 
+- Deleting the folder uninstalls it; `git clone` again to reinstall. (`custom_nodes/` is
+  gitignored by ComfyUI itself, so ComfyUI updates leave it alone.)
 - Workflow facts (checkpoint, loras, prompts, sampler settings) are read from disk each load,
   so saving a workflow in the UI shows up with no action.
 - Supported workflow formats: UI-format (`nodes`/`links`) and API-format (`class_type`).
