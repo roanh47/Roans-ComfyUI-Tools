@@ -128,6 +128,7 @@ const V = {
 };
 
 let uiStamp = null;
+const RT_STATS = { wfBuilds: 0, mdBuilds: 0, injections: 0, hides: 0, observerPasses: 0 };
 let pollFails = 0;
 
 /* ------------------------------------------------------------------ helpers */
@@ -974,6 +975,7 @@ function hideNativeSiblings(host, bar) {
     }
   };
   walk(container);
+  RT_STATS.hides += 1;
   if (hid) console.log(`[Roans-ComfyUI-Tools] hid ${hid} native element(s) behind the takeover`);
   return hid > 0;
 }
@@ -1134,6 +1136,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    stats: RT_STATS,
     folderUi,
     integrity,
     mdRow: mdRowInfo,
@@ -1253,6 +1256,7 @@ function wfFolderSort(a, b) {
 }
 
 function buildWorkflowBar() {
+  RT_STATS.wfBuilds += 1;
   const bar = el("div", "rt-wf-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
@@ -1558,6 +1562,7 @@ function modelFolderMetaOf(f) {
 }
 
 function buildModelsBar() {
+  RT_STATS.mdBuilds += 1;
   const bar = el("div", "rt-md-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
