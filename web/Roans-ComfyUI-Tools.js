@@ -1101,6 +1101,48 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  const PROPS = [
+    "fontFamily", "fontSize", "fontWeight", "lineHeight", "color", "backgroundColor",
+    "borderWidth", "borderStyle", "borderColor", "borderRadius", "paddingTop", "paddingRight",
+    "paddingBottom", "paddingLeft", "height", "gap", "opacity", "cursor",
+  ];
+  const native = {};
+  const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  native.tokens = {};
+  for (const t of [
+    "--fg-color", "--bg-color", "--comfy-menu-bg", "--comfy-menu-secondary-bg", "--comfy-input-bg",
+    "--border-color", "--descrip-text", "--input-text", "--primary-bg", "--primary-hover-bg",
+    "--p-primary-color", "--color-charcoal-700", "--button-surface", "--button-hover-surface",
+    "--p-content-border-radius", "--p-text-muted-color", "--p-surface-100",
+  ]) {
+    native.tokens[t] = cssVar(t);
+  }
+  for (const sel of [
+    "body",
+    "[data-testid='node-library-tab-button']",
+    "[data-testid='apps-tab-button']",
+    ".comfy-vue-side-bar-container",
+    "p-scrollpanel, .p-scrollpanel",
+    "input.p-inputtext, .p-inputtext",
+    ".p-button",
+    ".p-select",
+    ".p-select-label",
+    ".p-tree-node-content",
+    ".model-lib-tree-explorer",
+    "comfyui-workflows-search-panel input",
+    ".p-divider",
+    ".side-bar-panel, .sidebar-content-container",
+  ]) {
+    const el2 = document.querySelector(sel);
+    if (!el2) {
+      native[sel] = "absent";
+      continue;
+    }
+    const cs = getComputedStyle(el2);
+    const out = {};
+    for (const p of PROPS) out[p] = String(cs[p]).slice(0, 40);
+    native[sel] = out;
+  }
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
@@ -1150,6 +1192,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    native,
     wfQ: V.wf.q,
     wfSortState: `${V.wf.sort}/${V.wf.desc}`,
     hit,
