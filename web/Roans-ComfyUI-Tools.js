@@ -404,10 +404,18 @@ function enhanceNativeModelLibrary() {
     }
   }
 
+  // ComfyUI mutates the DOM constantly; scanning on every single mutation saturates
+  // the main thread. Coalesce to one pass per animation frame.
+  let queued = false;
   const obs = new MutationObserver(() => {
-    inject();
-    markRows();
-    decorateNativeTabs();
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      inject();
+      markRows();
+      decorateNativeTabs();
+    });
   });
   obs.observe(document.body, { childList: true, subtree: true });
   inject();

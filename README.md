@@ -53,14 +53,16 @@ prompts. Back that file up yourself if you care about it.
 
 ## What each tab does
 
-**Models** — every file ComfyUI can actually load, scanned live from `folder_paths`
-*and* Comfy Desktop's extra model paths. New downloads appear by themselves; hit
-*rescan* to force it. Search covers every field, and you can sort by name/size/newest
-and **group** by type, folder, rank or why.
+**Models** — this is ComfyUI's **own** Models panel (`model-library`), enhanced in place.
+No second Models button is added and the native one is not removed: the extension appends
+your data to the panel's model preview card whenever you select a model — File type,
+Version, Base, Rank?, Why?, Lora Keyword, Lora dim, Trained on, Notes, an
+**open model page ↗** link, and an **edit** form that saves through this extension's API.
+Rows in the folder tree get a small 🔗 / ★ marker when you have a link or a verdict for
+them. Because the panel is a Vue component, the injection is re-applied by a
+`MutationObserver` after every re-render (throttled to one pass per animation frame).
 
-This tab replaces ComfyUI's own built-in `model-library` Models tab — the extension
-unregisters it on startup so you don't end up with two (toggle
-*"Hide ComfyUI's built-in Models tab"* in ComfyUI's settings to get it back).
+**Prompts** — the only NEW tab this adds, with a Prompts button next to ComfyUI's own.
 
 | field | source |
 |---|---|
@@ -77,13 +79,25 @@ unregisters it on startup so you don't end up with two (toggle
 Anything you type is saved to `data/library.json` and takes priority over the detected value.
 That file is yours: it is gitignored and never leaves the machine.
 
-**Prompts** — two groups:
+Two groups inside it:
 
-- *saved*: prompts you write in the tab, with positive and negative as separate fields plus an
-  optional **corresponding workflow** picked from a dropdown of your actual workflow files
+- *saved*: prompts you write here, positive and negative as separate fields plus an optional
+  **corresponding workflow** picked from a dropdown of your actual workflow files; search,
+  tags, duplicate and delete included
 - *from workflows*: pulled out of the workflow files on every load, tagged with the checkpoint
   and loras that prompt belongs to. *save to library* turns one into an editable saved prompt;
   *edit + attach workflow* does the same with the workflow already attached
+
+Both tabs speak the same design language (cards, chips with counts, collapsible sections,
+group-by on models: type/folder/rank/why and on prompts: workflow/tag/checkpoint).
+
+## Your pfp on the tab icons
+
+Drop a square picture at `web/avatar.jpg` and it is drawn as a 10 px circle in the
+bottom-right of the Workflows, Node Library and Models tab buttons, plus the Prompts one —
+appended *inside* the native buttons, which are never added or removed. That file is
+gitignored, so a fresh clone simply has no badge (`img.onerror` removes it) and your face
+never lands in the repo. Size is the `AVATAR_SIZE` constant.
 
 Every prompt card has copy-positive, copy-negative, and *open in canvas*, which loads the
 attached workflow straight into the graph.
