@@ -978,6 +978,7 @@ function guardInjection(tabId, barSelector, findHost, build, label, options = {}
   if (!host) return;
   if (active === null && !host.getClientRects().length) return;
   if (!bar) {
+    injectStyles();
     bar = build();
     host.prepend(bar);
     console.log(`[Roans-ComfyUI-Tools] ${label} browser mounted`);
@@ -1044,8 +1045,20 @@ function reportDiag() {
     const p = b && b.parentElement;
     return p ? [...p.children].map((k) => ({ tag: k.tagName.toLowerCase(), cls: (k.className || "").toString().slice(0, 40), display: k.style.display, visible: !!k.getClientRects().length })) : [];
   })();
+  const styleTag = document.getElementById("rt-styles");
+  const card = document.querySelector(".rt-card");
+  const styles = {
+    tag: !!styleTag,
+    rules: styleTag && styleTag.sheet ? styleTag.sheet.cssRules.length : 0,
+    cardFound: !!card,
+    cardBg: card ? getComputedStyle(card).backgroundColor : "",
+    cardPad: card ? getComputedStyle(card).padding : "",
+    cardRadius: card ? getComputedStyle(card).borderRadius : "",
+    cardFont: card ? getComputedStyle(card).fontSize : "",
+  };
   return {
     dpr: devicePixelRatio,
+    styles,
     href: location.href,
     width: innerWidth,
     ready: document.readyState,
@@ -1699,6 +1712,8 @@ function registerTab(base, painter, Vue) {
  */
 // Report on a timer as well: if the page stalls, mutation reports go silent and
 // I would be looking at a stale snapshot forever.
+injectStyles();
+
 setInterval(() => {
   try {
     sendDiag();
