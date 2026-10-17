@@ -80,6 +80,8 @@ const CSS = `
 .rt-card { min-width: 0; }
 .rt-head { min-width: 0; }
 .rt-wf-bar .rt-scroll, .rt-md-bar .rt-scroll { overflow-x: hidden; }
+.rt-wf-bar, .rt-md-bar { height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
+.rt-scroll { flex: 1 1 auto; min-height: 0; }
 .rt-dim { white-space: nowrap; }
 `;
 
@@ -1045,6 +1047,13 @@ function reportDiag() {
     const p = b && b.parentElement;
     return p ? [...p.children].map((k) => ({ tag: k.tagName.toLowerCase(), cls: (k.className || "").toString().slice(0, 40), display: k.style.display, visible: !!k.getClientRects().length })) : [];
   })();
+  const anyBar = document.querySelector(".rt-wf-bar, .rt-md-bar");
+  const panelHost = anyBar && anyBar.parentElement;
+  const fill = {
+    barH: anyBar ? Math.round(anyBar.getBoundingClientRect().height) : 0,
+    hostH: panelHost ? Math.round(panelHost.getBoundingClientRect().height) : 0,
+    outerH: panelHost && panelHost.parentElement ? Math.round(panelHost.parentElement.getBoundingClientRect().height) : 0,
+  };
   const styleTag = document.getElementById("rt-styles");
   const card = document.querySelector(".rt-card");
   const styles = {
@@ -1059,6 +1068,7 @@ function reportDiag() {
   return {
     dpr: devicePixelRatio,
     styles,
+    fill,
     href: location.href,
     width: innerWidth,
     ready: document.readyState,
@@ -1213,7 +1223,7 @@ function buildWorkflowBar() {
   }
 
   const tree = el("div", "rt-scroll");
-  tree.style.cssText = "max-height:50vh;padding-top:4px;";
+  tree.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
   bar.appendChild(tree);
 
   function workflowRow(w, depth) {
@@ -1464,7 +1474,7 @@ function buildModelsBar() {
   bar.appendChild(toolbar);
 
   const body = el("div", "rt-scroll");
-  body.style.cssText = "max-height:52vh;padding-top:4px;";
+  body.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
   bar.appendChild(body);
 
   function modelRow(m, depth) {
