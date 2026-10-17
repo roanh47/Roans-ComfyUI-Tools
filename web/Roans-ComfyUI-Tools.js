@@ -868,26 +868,58 @@ function tabIsActive(tabId) {
   return /active|selected|current/.test(cls);
 }
 
-function guardInjection(tabId, barSelector, findHost, build, label) {
+// Panels we took over: hide ComfyUI's own list so there is only ever ONE way to
+// pick something. Restored the moment our bar goes away.
+let _rtHidden = [];
+
+function hideNativeSiblings(host, bar) {
+  // Safety: never do this to a container that is shared with other tabs.
+  if (host.querySelector("[data-testid$='-tab-button']")) return false;
+  if (host.querySelector(".model-lib-tree-explorer") || host.querySelector(".rt-md-bar")) return false;
+  let hid = 0;
+  for (const child of [...host.children]) {
+    if (child === bar || child.dataset.rtHidden === "1") continue;
+    if (!child.tagName || child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
+    child.dataset.rtHidden = "1";
+    child.style.display = "none";
+    _rtHidden.push(child);
+    hid += 1;
+  }
+  return hid > 0;
+}
+
+function showNativeSiblings() {
+  for (const el of document.querySelectorAll("[data-rt-hidden]")) {
+    delete el.dataset.rtHidden;
+    el.style.display = "";
+  }
+  _rtHidden = [];
+}
+
+function guardInjection(tabId, barSelector, findHost, build, label, options = {}) {
   const active = tabIsActive(tabId);
-  const existing = document.querySelector(barSelector);
+  let bar = document.querySelector(barSelector);
   if (active === false) {
-    if (existing) existing.remove(); // switched away: leave no trace behind
+    if (bar) {
+      bar.remove(); // switched away: leave no trace behind
+      showNativeSiblings();
+    }
     return;
   }
   const host = findHost();
-  if (!host) return;
-  const visible = !!host.getClientRects().length;
-  if (!visible && active === null) return;
-  if (existing) {
-    if (!host.contains(existing)) {
-      existing.remove();
-    } else {
-      return; // already mounted in the right place
-    }
+  if (bar && (!host || !host.contains(bar))) {
+    bar.remove();
+    showNativeSiblings();
+    bar = null;
   }
-  host.prepend(build());
-  console.log(`[Roans-ComfyUI-Tools] ${label} browser mounted`);
+  if (!host) return;
+  if (active === null && !host.getClientRects().length) return;
+  if (!bar) {
+    bar = build();
+    host.prepend(bar);
+    console.log(`[Roans-ComfyUI-Tools] ${label} browser mounted`);
+  }
+  if (options.takeover) hideNativeSiblings(host, bar);
 }
 
 function reportDiag() {
@@ -1468,7 +1500,7 @@ function enhanceNativeModels() {
 }
 
 function enhanceNativeWorkflows() {
-  guardInjection("workflows", ".rt-wf-bar", () => document.querySelector(WF_PANEL), buildWorkflowBar, "workflows");
+  guardInjection("workflows", ".rt-wf-bar", () => document.querySelector(WF_PANEL), buildWorkflowBar, "workflows", { takeover: true });
 }
 
 /**
