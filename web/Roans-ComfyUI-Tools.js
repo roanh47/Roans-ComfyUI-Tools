@@ -1128,6 +1128,245 @@ function buildWorkflowBar() {
   return bar;
 }
 
+/* ---- ComfyUI's own Models panel: sortable browser with pinned folders ------- */
+
+// ComfyUI's Models tab is a plain tree in file order. The panel body is
+// <SidebarTabTemplate>#body -> Divider -> TreeExplorer.model-lib-tree-explorer,
+// so the browser mounts in front of the tree, inside the panel it already has.
+function rtBytes(n) {
+  if (!n && n !== 0) return "";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < u.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v >= 10 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+}
+
+function modelMatches(m) {
+  const terms = V.model.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = [m.name, m.filename, m.folder, m.model_type, m.file_type, m.base, m.why, m.keyword, m.note]
+    .concat(m.auto_tags || [])
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return terms.every((t) => hay.includes(t));
+}
+
+function modelsSorted(items) {
+  const { sort, desc } = V.model;
+  const key = {
+    name: (m) => (m.name || m.filename).toLowerCase(),
+    size: (m) => m.size || 0,
+    date: (m) => m.modified || 0,
+    type: (m) => `${m.model_type || ""} ${(m.name || m.filename).toLowerCase()}`,
+  }[sort] || ((m) => (m.name || m.filename).toLowerCase());
+  const sorted = items.slice().sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+    return desc ? -cmp : cmp;
+  });
+  return sorted.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+}
+
+function modelFolderMetaOf(f) {
+  return (S.modelFolderMeta || {})[f] || {};
+}
+
+function buildModelsBar() {
+  const bar = el("div", "rt-md-bar");
+  bar.style.cssText =
+    "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
+
+  const head = el("div", "rt-head");
+  head.appendChild(el("span", "rt-sec", "models"));
+  head.appendChild(el("span", "rt-spacer"));
+  const groups = new Set(S.models.map((m) => m.folder));
+  head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${groups.size} folders`));
+  bar.appendChild(head);
+
+  const toolbar = el("div", "rt-head");
+  const search = input("rt-grow", V.model.q, "search name, base, keyword, tag…");
+  search.oninput = () => {
+    V.model.q = search.value;
+    paint();
+  };
+  const sort = select(
+    [
+      ["name", "name"],
+      ["size", "size"],
+      ["date", "most recent"],
+      ["type", "type"],
+    ],
+    V.model.sort,
+    (v) => {
+      V.model.sort = v;
+      paint();
+    }
+  );
+  const dir = btn(V.model.desc ? "↓ desc" : "↑ asc", "icon", () => {
+    V.model.desc = !V.model.desc;
+    paint();
+  });
+  toolbar.append(search, sort, dir);
+  bar.appendChild(toolbar);
+
+  const body = el("div", "rt-scroll");
+  body.style.cssText = "max-height:52vh;padding-top:4px;";
+  bar.appendChild(body);
+
+  function modelRow(m, depth) {
+    const card = el("div", "rt-card");
+    card.style.cssText = `padding:6px 8px;margin-left:${depth * 10}px;`;
+
+    const row = el("div", "rt-head");
+    const star = btn(m.pinned ? "★" : "☆", "icon", async () => {
+      await api("/model_meta", { filename: m.filename, pinned: !m.pinned });
+      await load();
+      paint();
+    });
+    star.title = m.pinned ? "unpin" : "pin to the top of this folder";
+    row.appendChild(star);
+
+    const title = el("span", "rt-title", m.name || m.filename);
+    title.title = m.filename;
+    row.appendChild(title);
+    if (m.model_type) row.appendChild(badge(m.model_type));
+    if (m.file_type) row.appendChild(badge(m.file_type));
+    row.appendChild(badge(rtBytes(m.size)));
+    row.appendChild(el("span", "rt-spacer"));
+
+    if (m.link) {
+      const open = btn("↗", "icon", () => window.open(m.link, "_blank", "noopener"));
+      open.title = m.link;
+      row.appendChild(open);
+    }
+    row.appendChild(
+      btn("✎", "icon", () => {
+        V.model.open = V.model.open.has(m.filename)
+          ? (V.model.open.delete(m.filename), V.model.open)
+          : (V.model.open.add(m.filename), V.model.open);
+        paint();
+      })
+    );
+    card.appendChild(row);
+
+    if (V.model.open.has(m.filename)) {
+      const detail = el("div", "rt-detail");
+      const pairs = [
+        ["why", m.why || ""],
+        ["keyword", m.keyword || ""],
+        ["note", m.note || ""],
+      ];
+      const fields = {};
+      for (const [key, val] of pairs) {
+        const f = el("div", "rt-head");
+        f.appendChild(el("span", "rt-dim", key));
+        fields[key] = input("rt-grow", val);
+        f.appendChild(fields[key]);
+        detail.appendChild(f);
+      }
+      const info = el("div", "rt-dim");
+      info.textContent = [
+        m.base && `base ${m.base}`,
+        m.version && `v${m.version}`,
+        m.rank && `rank ${m.rank}`,
+        m.lora_dim && `${m.lora_dim} dim`,
+        (m.auto_tags || []).slice(0, 6).join(", "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      detail.appendChild(info);
+      const actions = el("div", "rt-head");
+      actions.appendChild(
+        btn("save", "pri", async () => {
+          await api("/model_meta", {
+            filename: m.filename,
+            why: fields.why.value,
+            keyword: fields.keyword.value,
+            note: fields.note.value,
+          });
+          await load();
+          toast("saved");
+          paint();
+        })
+      );
+      actions.appendChild(
+        btn("copy filename", null, () => {
+          navigator.clipboard?.writeText(m.filename);
+          toast("filename copied");
+        })
+      );
+      detail.appendChild(actions);
+      card.appendChild(detail);
+    }
+    return card;
+  }
+
+  function paint() {
+    body.innerHTML = "";
+    const byFolder = new Map();
+    for (const m of S.models) {
+      if (!byFolder.has(m.folder)) byFolder.set(m.folder, []);
+      byFolder.get(m.folder).push(m);
+    }
+    const folders = [...byFolder.keys()].sort((a, b) => {
+      const ma = modelFolderMetaOf(a);
+      const mb = modelFolderMetaOf(b);
+      if (!!mb.pinned !== !!ma.pinned) return mb.pinned ? 1 : -1;
+      const oa = ma.order == null ? Number.MAX_SAFE_INTEGER : ma.order;
+      const ob = mb.order == null ? Number.MAX_SAFE_INTEGER : mb.order;
+      if (oa !== ob) return oa - ob;
+      return a.localeCompare(b);
+    });
+
+    for (const folder of folders) {
+      const meta = modelFolderMetaOf(folder);
+      const items = modelsSorted(byFolder.get(folder).filter(modelMatches));
+      const collapsed = V.model.collapsed.has(folder) || meta.collapsed;
+
+      const fh = el("div", "rt-head");
+      fh.appendChild(
+        btn(collapsed ? "▸" : "▾", "icon", () => {
+          if (V.model.collapsed.has(folder)) V.model.collapsed.delete(folder);
+          else V.model.collapsed.add(folder);
+          paint();
+        })
+      );
+      const pin = btn(meta.pinned ? "★" : "☆", "icon", async () => {
+        await api("/model_folder", { folder, pinned: !meta.pinned });
+        await load();
+        paint();
+      });
+      pin.title = "pin this folder to the top";
+      fh.appendChild(pin);
+      fh.appendChild(el("span", "rt-title", folder));
+      fh.appendChild(el("span", "rt-dim", String(items.length)));
+      body.appendChild(fh);
+
+      if (collapsed) continue;
+      for (const m of items) body.appendChild(modelRow(m, 1));
+    }
+    const shown = S.models.filter(modelMatches).length;
+    body.appendChild(el("div", "rt-dim", `${shown} of ${S.models.length} models`));
+  }
+
+  paint();
+  return bar;
+}
+
+function enhanceNativeModels() {
+  const tree = document.querySelector(".model-lib-tree-explorer");
+  const host = tree && tree.parentElement;
+  if (!host || host.querySelector(".rt-md-bar")) return;
+  host.prepend(buildModelsBar());
+  console.log("[Roans-ComfyUI-Tools] models browser injected into ComfyUI's Models panel");
+}
+
 function enhanceNativeWorkflows() {
   const panel = document.querySelector(WF_PANEL);
   if (!panel || panel.querySelector(".rt-wf-bar")) return;

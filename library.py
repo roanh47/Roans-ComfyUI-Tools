@@ -302,6 +302,7 @@ def scan_models(force=False):
                             "keyword": saved.get("keyword", ""),
                             "rank": saved.get("rank", ""),
                             "note": saved.get("note", ""),
+                            "pinned": bool(saved.get("pinned")),
                             "tags": saved.get("tags", []),
                             "lora_dim": meta.get("lora_dim", ""),
                             "auto_tags": meta.get("auto_tags", []),

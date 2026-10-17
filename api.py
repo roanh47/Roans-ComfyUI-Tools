@@ -185,6 +185,21 @@ async def post_wf_move(request):
     return web.json_response({"ok": True, "rel": moved, "folders": library.wf_folders()})
 
 
+async def post_model_meta(request):
+    """Per-model overrides: display name, pin, why/note/keyword/link/rank."""
+    data = await _body(request)
+    filename = data.get("filename")
+    if not filename:
+        return web.json_response({"error": "filename is required"}, status=400)
+    store = library.load_store()
+    entry = store["models"].setdefault(filename, {})
+    for key in ("name", "pinned", "why", "note", "keyword", "link", "rank", "base", "version", "tags"):
+        if key in data:
+            entry[key] = data[key]
+    library.save_store(store)
+    return web.json_response({"ok": True, "filename": filename, "meta": entry})
+
+
 async def post_model_folder(request):
     """Order / pin for a model folder (checkpoints, loras, …)."""
     data = await _body(request)
@@ -234,6 +249,7 @@ ROUTES = {
     ("POST", "wf_folder"): post_wf_folder,
     ("POST", "wf_mkdir"): post_wf_mkdir,
     ("POST", "wf_move"): post_wf_move,
+    ("POST", "model_meta"): post_model_meta,
     ("POST", "model_folder"): post_model_folder,
 }
 
