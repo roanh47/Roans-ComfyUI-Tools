@@ -789,23 +789,8 @@ let repaint = () => {};
 // simply has no badge (img.onerror removes it), so nothing personal goes public.
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
-const AVATAR_GAP = 3; // px — spacing from the icon's bottom and right edges
+const AVATAR_GAP = 3; // px — spacing from the bottom and right of the tab button
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
-
-/** The icon element inside a tab button, so the badge hugs the icon not the button box. */
-function iconTarget(btn) {
-  const candidates = [
-    ".iconify",
-    "[class*='icon-']",
-    "svg",
-    "span",
-  ];
-  for (const sel of candidates) {
-    const node = btn.querySelector(sel);
-    if (node && node.getBoundingClientRect().width > 4) return node;
-  }
-  return btn;
-}
 
 /**
  * Badges the sidebar tab buttons that this extension is enhancing. The buttons
@@ -816,14 +801,10 @@ function iconTarget(btn) {
 function decorateNativeTabs() {
   for (const id of AVATAR_TABS) {
     const btn = document.querySelector(`[data-testid="${id}-tab-button"]`);
-    if (!btn) continue;
-    const target = iconTarget(btn);
-    const existing = btn.querySelector(".rt-avatar-badge");
-    if (existing && existing.parentElement === target) continue;
-    if (existing) existing.remove();
-    const cs = getComputedStyle(target);
-    if (cs.position === "static") target.style.position = "relative";
-    if (cs.overflow === "hidden") target.style.overflow = "visible";
+    if (!btn || btn.querySelector(".rt-avatar-badge")) continue;
+    const cs = getComputedStyle(btn);
+    if (cs.position === "static") btn.style.position = "relative";
+    if (cs.overflow === "hidden") btn.style.overflow = "visible";
     const img = el("img", "rt-avatar-badge");
     img.src = AVATAR_URL;
     img.alt = "";
@@ -841,7 +822,7 @@ function decorateNativeTabs() {
       "box-shadow:0 0 0 1px rgba(0,0,0,.6)",
     ].join(";");
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
-    target.appendChild(img);
+    btn.appendChild(img);
   }
 }
 
