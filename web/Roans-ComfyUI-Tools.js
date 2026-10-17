@@ -954,11 +954,24 @@ function reportDiag() {
   }));
   const tabs = [...document.querySelectorAll("[data-testid$='-tab-button']")].map((t) => ({
     testid: t.getAttribute("data-testid"),
-    aria: t.getAttribute("aria-selected"),
-    state: t.getAttribute("data-state"),
-    cls: (t.className || "").toString().slice(0, 60),
+    attrs: [...t.attributes]
+      .map((a) => `${a.name}=${a.value}`)
+      .filter((a) => !a.startsWith("class=") && !a.startsWith("style=")),
+    cls: (t.className || "").toString(),
   }));
-  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs };
+  // How many tab bodies exist at once, and which one is on screen?
+  const body =
+    document.querySelector(".comfy-vue-side-bar-body .p-scrollpanel-content") ||
+    document.querySelector(".comfy-vue-side-bar-body");
+  const bodyKids = body
+    ? [...body.children].map((k) => ({
+        tag: k.tagName.toLowerCase(),
+        cls: (k.className || "").toString().slice(0, 70),
+        visible: !!k.getClientRects().length,
+        text: (k.innerText || "").replace(/\s+/g, " ").slice(0, 50),
+      }))
+    : [];
+  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs, bodyKids };
 }
 
 async function sendDiag() {
