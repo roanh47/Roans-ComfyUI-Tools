@@ -1499,6 +1499,11 @@ function contextMenu(ev, items) {
       continue;
     }
     const item = el("button", "rt-menu-item" + (it.danger ? " danger" : ""), it.label);
+    if (it.disabled) {
+      item.disabled = true;
+      menu.appendChild(item);
+      continue;
+    }
     item.onclick = async () => {
       closeContextMenu();
       try {
@@ -1533,11 +1538,26 @@ function menuFor(kind, key) {
       { label: "Open", action: () => openWorkflow(w.rel) },
       { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; paint(); } },
       { separator: true },
-      { header: "add to folder" },
-      { label: "→ root", action: () => moveWorkflowTo(w.rel, "") },
-      ...folderList().map((f) => ({ label: `→ ${f}`, action: () => moveWorkflowTo(w.rel, f) })),
+      ...(w.folder
+        ? [
+            { label: "Remove from folder", action: () => moveWorkflowTo(w.rel, "") },
+            { separator: true },
+            { header: "move to folder" },
+          ]
+        : [{ header: "add to folder" }]),
+      ...folderList()
+        .filter((f) => f !== (w.folder || ""))
+        .map((f) => ({ label: f, action: () => moveWorkflowTo(w.rel, f) })),
+      ...(folderList().length ? [] : [{ label: "(no folders yet)", disabled: true }]),
       { separator: true },
-      { label: "Move to .trash", danger: true, action: () => trashWorkflow(w) },
+      { label: "Move to trash", danger: true, action: () => trashWorkflow(w) },
+    ];
+  }
+  if (kind === "space") {
+    return [
+      { label: "New folder…", action: () => openFolderInput("") },
+      { separator: true },
+      { label: "Rescan library", action: async () => { await load(true); paint(); toast("rescanned"); } },
     ];
   }
   if (kind === "folder") {
@@ -1552,7 +1572,7 @@ function menuFor(kind, key) {
           paint();
         } },
       { separator: true },
-      { label: "Delete folder (.trash)", danger: true, action: async () => {
+      { label: "Move folder to trash", danger: true, action: async () => {
           try {
             await api("/wf_rmdir", { folder });
             await load(true);
@@ -1687,13 +1707,7 @@ function buildWorkflowBar() {
     paint();
   });
   dir.title = V.wf.desc ? "descending — click for ascending" : "ascending — click for descending";
-  const newFolder = btn("", "icon", () => {
-    RT_STATS.folderClicks = (RT_STATS.folderClicks || 0) + 1;
-    openFolderInput("");
-  });
-  newFolder.appendChild(folderIcon(true));
-  newFolder.title = "new folder — / makes subfolders";
-  toolbar.append(search, sort, dir, newFolder);
+  toolbar.append(search, sort, dir);
   bar.appendChild(toolbar);
 
   // The name field opens here, right under the button that opened it — not at
@@ -1703,6 +1717,8 @@ function buildWorkflowBar() {
 
   const tree = el("div", "rt-scroll");
   tree.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
+  tree.dataset.rtKind = "space";
+  tree.dataset.rtKey = "";
   bar.appendChild(tree);
 
   function openFolderInput(prefix) {
