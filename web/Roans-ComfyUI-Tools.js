@@ -1066,9 +1066,11 @@ function mountFallbackPanel(painter) {
       });
     }
 
-    // Never show a second copy: if ComfyUI rendered our panel itself, ours stays hidden.
-    const ours = document.querySelector(".rt-wrap");
-    const sidebarHasOurs = !!ours && !panel.contains(ours);
+    // Never show a second copy: if our panel is already in the page somewhere outside
+    // this fallback container, ComfyUI rendered it itself and ours stays hidden.
+    // (Check the class the UI actually uses — `.rt-host` / `.rt`.)
+    const rendered = Array.from(document.querySelectorAll(".rt-host, .rt"));
+    const sidebarHasOurs = rendered.some((e) => !panel.contains(e));
 
     const on = activeId === "roansPrompts" || panel.dataset.forced === "1";
     panel.style.display = on && !sidebarHasOurs ? "block" : "none";
