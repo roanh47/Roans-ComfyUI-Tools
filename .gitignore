@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+data/*.tmp
+
+# Your own model links, notes and saved prompts. Never commit this.
+data/library.json
