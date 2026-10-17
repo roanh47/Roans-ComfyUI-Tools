@@ -55,7 +55,12 @@ prompts. Back that file up yourself if you care about it.
 
 **Models** — every file ComfyUI can actually load, scanned live from `folder_paths`
 *and* Comfy Desktop's extra model paths. New downloads appear by themselves; hit
-*rescan* to force it.
+*rescan* to force it. Search covers every field, and you can sort by name/size/newest
+and **group** by type, folder, rank or why.
+
+This tab replaces ComfyUI's own built-in `model-library` Models tab — the extension
+unregisters it on startup so you don't end up with two (toggle
+*"Hide ComfyUI's built-in Models tab"* in ComfyUI's settings to get it back).
 
 | field | source |
 |---|---|
@@ -97,15 +102,21 @@ attached workflow straight into the graph.
 
 ## Developing it live
 
-`library.py` is **hot-reloaded**: every request checks its mtime and calls `importlib.reload`
-when it changed, so edits to the scanning/parsing logic take effect on the next click — no
-ComfyUI restart.
+Nothing here needs a ComfyUI restart except `__init__.py` itself.
+
+- `api.py` and `library.py` are **hot-reloaded**: `__init__.py` registers one catch-all route
+  (`/Roans-ComfyUI-Tools/api/{tail:.*}`) and dispatches into `api.py`, re-importing both modules
+  whenever their mtime moves. So editing a handler, or adding a whole new endpoint to
+  `api.ROUTES`, works on the next request.
+- The sidebar JS is served from disk, and the running UI polls `api/ui_version` every 4s: if the
+  JS file changed, it reloads itself; if only `library.py` changed, it just refreshes the lists.
 
 | you changed | to see it |
 |---|---|
-| `library.py` | nothing, it's live |
-| `web/Roans-ComfyUI-Tools.js` | refresh the browser tab (Ctrl+Shift+R) |
-| `__init__.py` (routes) | restart ComfyUI — aiohttp routes only bind at boot |
+| `library.py` | nothing, it's live (lists refresh themselves) |
+| `api.py` | nothing, it's live — new endpoints included |
+| `web/Roans-ComfyUI-Tools.js` | nothing — the open UI notices and reloads |
+| `__init__.py` | restart ComfyUI, or hit `GET /Roans-ComfyUI-Tools/reload` for the modules |
 
 ## Notes
 
