@@ -1143,6 +1143,42 @@ function reportDiag() {
     for (const p of PROPS) out[p] = String(cs[p]).slice(0, 40);
     native[sel] = out;
   }
+  // Style census of ComfyUI's own sidebar: group its elements by shape and report
+  // the computed values, so our CSS can copy the real thing instead of guessing.
+  const census = (() => {
+    const root =
+      document.querySelector(".sidebar-content-container") ||
+      document.querySelector(".comfy-vue-side-bar-container") ||
+      document.querySelector(".side-bar-panel");
+    if (!root) return "no sidebar root";
+    const seen = new Map();
+    for (const e of root.querySelectorAll("*")) {
+      if (e.closest(".rt-app")) continue; // our own stuff does not count
+      const cls = (e.className || "").toString().trim().split(/\s+/).slice(0, 2).join(".");
+      const key = `${e.tagName.toLowerCase()}${cls ? "." + cls : ""}`;
+      if (seen.has(key)) {
+        seen.get(key).n += 1;
+        continue;
+      }
+      const cs = getComputedStyle(e);
+      seen.set(key, {
+        n: 1,
+        key,
+        font: cs.fontSize,
+        weight: cs.fontWeight,
+        h: Math.round(e.getBoundingClientRect().height) + "px",
+        pad: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].join(" "),
+        radius: cs.borderRadius,
+        bg: cs.backgroundColor,
+        fg: cs.color,
+        border: cs.borderWidth + " " + cs.borderColor,
+        gap: cs.gap,
+      });
+    }
+    return [...seen.values()]
+      .filter((v) => v.n >= 2 || /input|button|a$/.test(v.key))
+      .slice(0, 30);
+  })();
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
@@ -1192,6 +1228,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    census,
     native,
     wfQ: V.wf.q,
     wfSortState: `${V.wf.sort}/${V.wf.desc}`,
