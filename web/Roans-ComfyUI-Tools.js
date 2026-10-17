@@ -791,7 +791,7 @@ let repaint = () => {};
 // simply has no badge (img.onerror removes it), so nothing personal goes public.
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
-const AVATAR_GAP = 5; // px — the spacing, used for BOTH the bottom and the left offset
+const AVATAR_GAP = 5; // px — the spacing, used for BOTH the top and the left offset
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
 
 /**
@@ -800,9 +800,12 @@ const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts
  * position/overflow if the native styling would clip it. Vue re-renders the strip
  * from scratch, so this is called from an observer as well as on demand.
  *
+ * Anchored top-right, not bottom-right: in the expanded sidebar the tab label sits
+ * under the icon, so a bottom badge landed on the text.
+ *
  * The left nudge is a transform, not `right`: this button's right edge sits against
  * the sidebar edge, so a `right` offset does not readably shift the badge (it slid
- * `bottom` fine but not `right`). translateX always applies.
+ * `top` fine but not `right`). translateX always applies.
  */
 function decorateNativeTabs() {
   for (const id of AVATAR_TABS) {
