@@ -507,6 +507,10 @@ function enhanceNativeModelLibrary() {
       decorateNativeTabs();
       enhanceNativeWorkflows();
       enhanceNativeModels();
+      if (!window.__rtDiagAt || Date.now() - window.__rtDiagAt > 4000) {
+        window.__rtDiagAt = Date.now();
+        sendDiag();
+      }
     });
   });
   obs.observe(document.body, { childList: true, subtree: true });
@@ -515,6 +519,10 @@ function enhanceNativeModelLibrary() {
   decorateNativeTabs();
   enhanceNativeWorkflows();
       enhanceNativeModels();
+      if (!window.__rtDiagAt || Date.now() - window.__rtDiagAt > 4000) {
+        window.__rtDiagAt = Date.now();
+        sendDiag();
+      }
   console.log("[Roans-ComfyUI-Tools] ComfyUI's Models panel enhancer installed");
 }
 
@@ -839,6 +847,97 @@ function decorateNativeTabs() {
     ].join(";");
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
     btn.appendChild(img);
+  }
+}
+
+/* ---- tab-aware injection ---------------------------------------------------- */
+
+// The sidebar keeps tab panels in the DOM, so injecting into a panel blindly can
+// leave our bar sitting on top of a completely different tab. Rule: our bar only
+// exists while its own tab is the selected one — otherwise it is removed again.
+function tabIsActive(tabId) {
+  const b =
+    document.querySelector(`[data-testid="${tabId}-tab-button"]`) ||
+    document.querySelector(`[data-testid="${tabId}-tab"]`);
+  if (!b) return null; // unknown: caller falls back to visibility
+  const sel = b.getAttribute("aria-selected");
+  if (sel != null) return sel === "true";
+  const state = b.getAttribute("data-state");
+  if (state) return state === "active";
+  const cls = (b.className || "").toString();
+  return /active|selected|current/.test(cls);
+}
+
+function guardInjection(tabId, barSelector, findHost, build, label) {
+  const active = tabIsActive(tabId);
+  const existing = document.querySelector(barSelector);
+  if (active === false) {
+    if (existing) existing.remove(); // switched away: leave no trace behind
+    return;
+  }
+  const host = findHost();
+  if (!host) return;
+  const visible = !!host.getClientRects().length;
+  if (!visible && active === null) return;
+  if (existing) {
+    if (!host.contains(existing)) {
+      existing.remove();
+    } else {
+      return; // already mounted in the right place
+    }
+  }
+  host.prepend(build());
+  console.log(`[Roans-ComfyUI-Tools] ${label} browser mounted`);
+}
+
+function reportDiag() {
+  const chainOf = (el) => {
+    const out = [];
+    let n = el;
+    while (n && n !== document.body) {
+      const cls =
+        typeof n.className === "string" && n.className.trim()
+          ? "." + n.className.trim().split(/\s+/).slice(0, 3).join(".")
+          : "";
+      out.push(n.tagName.toLowerCase() + cls);
+      n = n.parentElement;
+    }
+    return out;
+  };
+  const panels = [
+    ["comfyui-workflows-panel", document.querySelector("comfyui-workflows-panel")],
+    ["comfyui-workflows-browse", document.querySelector("comfyui-workflows-browse")],
+    ["comfyui-workflows-search-panel", document.querySelector("comfyui-workflows-search-panel")],
+    ["model-lib-tree-explorer", document.querySelector(".model-lib-tree-explorer")],
+  ].map(([name, el]) => ({
+    name,
+    found: !!el,
+    visible: !!(el && el.getClientRects().length),
+    chain: el ? chainOf(el).slice(0, 6) : [],
+  }));
+  const bars = [...document.querySelectorAll(".rt-wf-bar, .rt-md-bar")].map((b) => ({
+    kind: b.className,
+    visible: !!b.getClientRects().length,
+    chain: chainOf(b).slice(0, 7),
+  }));
+  const tabs = [...document.querySelectorAll("[data-testid$='-tab-button']")].map((t) => ({
+    testid: t.getAttribute("data-testid"),
+    aria: t.getAttribute("aria-selected"),
+    state: t.getAttribute("data-state"),
+    cls: (t.className || "").toString().slice(0, 60),
+  }));
+  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs };
+}
+
+async function sendDiag() {
+  try {
+    await fetch("/Roans-ComfyUI-Tools/api/diag", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reportDiag()),
+    });
+  } catch (e) {
+    /* diagnostics are best-effort */
   }
 }
 
@@ -1362,18 +1461,14 @@ function buildModelsBar() {
 }
 
 function enhanceNativeModels() {
-  const tree = document.querySelector(".model-lib-tree-explorer");
-  const host = tree && tree.parentElement;
-  if (!host || host.querySelector(".rt-md-bar")) return;
-  host.prepend(buildModelsBar());
-  console.log("[Roans-ComfyUI-Tools] models browser injected into ComfyUI's Models panel");
+  guardInjection("model-library", ".rt-md-bar", () => {
+    const tree = document.querySelector(".model-lib-tree-explorer");
+    return tree && tree.parentElement;
+  }, buildModelsBar, "models");
 }
 
 function enhanceNativeWorkflows() {
-  const panel = document.querySelector(WF_PANEL);
-  if (!panel || panel.querySelector(".rt-wf-bar")) return;
-  panel.prepend(buildWorkflowBar());
-  console.log("[Roans-ComfyUI-Tools] workflow browser injected into ComfyUI's Workflows panel");
+  guardInjection("workflows", ".rt-wf-bar", () => document.querySelector(WF_PANEL), buildWorkflowBar, "workflows");
 }
 
 /**

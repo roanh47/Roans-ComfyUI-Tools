@@ -185,6 +185,22 @@ async def post_wf_move(request):
     return web.json_response({"ok": True, "rel": moved, "folders": library.wf_folders()})
 
 
+_DIAG = {}
+
+
+async def post_diag(request):
+    """The frontend reports its own DOM facts here — the only way to see the real
+    page structure when no browser console is available."""
+    global _DIAG
+    data = await _body(request)
+    _DIAG = data
+    return web.json_response({"ok": True, "keys": sorted(data.keys())})
+
+
+async def get_diag(request):
+    return web.json_response(_DIAG or {"note": "the page has not reported yet"})
+
+
 async def post_model_meta(request):
     """Per-model overrides: display name, pin, why/note/keyword/link/rank."""
     data = await _body(request)
@@ -250,6 +266,8 @@ ROUTES = {
     ("POST", "wf_mkdir"): post_wf_mkdir,
     ("POST", "wf_move"): post_wf_move,
     ("POST", "model_meta"): post_model_meta,
+    ("POST", "diag"): post_diag,
+    ("GET", "diag"): get_diag,
     ("POST", "model_folder"): post_model_folder,
 }
 
