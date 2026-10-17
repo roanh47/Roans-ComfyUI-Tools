@@ -54,6 +54,11 @@ const CSS = `
 .rt-folder .rt-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden;
       text-overflow:ellipsis; min-width:0; }
 .rt-count { font-size:10.5px; opacity:.45; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.rt-add { display:flex; align-items:center; gap:6px; height:26px; margin-top:2px; padding:0 8px;
+      font:inherit; font-size:11.5px; color:inherit; opacity:.5; cursor:pointer;
+      background:transparent; border:1px dashed var(--rt-line); border-radius:6px; }
+.rt-add:hover { opacity:.9; border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); }
+.rt-newfolder { display:flex; gap:6px; align-items:center; padding:2px 0 2px 14px; }
 
 /* cards */
 .rt-card { border:1px solid var(--rt-line); border-radius:8px; padding:7px 8px;
@@ -118,7 +123,7 @@ const S = { models: [], workflows: [], prompts: [], wfFolders: [], wfFolderMeta:
 const V = {
   model: { q: "", type: "All", sort: "name", desc: false, group: "type", open: new Set(), collapsed: new Set() },
   prompt: { q: "", kind: "all", group: "none", open: new Set(), collapsed: new Set() },
-  wf: { q: "", sort: "recent", desc: true, collapsed: new Set(), editing: null, moving: null, newFolder: false },
+  wf: { q: "", sort: "recent", desc: true, collapsed: new Set(), editing: null, moving: null, newFolder: null },
 };
 
 let uiStamp = null;
@@ -1210,12 +1215,6 @@ function buildWorkflowBar() {
   const head = el("div", "rt-head");
   head.appendChild(el("span", "rt-sec", "workflows"));
   head.appendChild(el("span", "rt-spacer"));
-  const newFolder = btn("+", "icon", async () => {
-    V.wf.newFolder = !V.wf.newFolder;
-    paint();
-  });
-  newFolder.title = "new folder — use / for subfolders";
-  head.appendChild(newFolder);
   bar.appendChild(head);
 
   const toolbar = el("div", "rt-head");
@@ -1236,32 +1235,13 @@ function buildWorkflowBar() {
       paint();
     }
   );
-  const dir = btn(V.wf.desc ? "↓ desc" : "↑ asc", "icon", () => {
+  const dir = btn(V.wf.desc ? "↓" : "↑", "icon", () => {
     V.wf.desc = !V.wf.desc;
     paint();
   });
-  dir.title = "flip the sort direction";
+  dir.title = V.wf.desc ? "descending — click for ascending" : "ascending — click for descending";
   toolbar.append(search, sort, dir);
   bar.appendChild(toolbar);
-
-  if (V.wf.newFolder) {
-    const row = el("div", "rt-head");
-    const name = input("rt-grow", "", "folder name, sub/folder allowed");
-    const go = btn("create", "pri", async () => {
-      if (!name.value.trim()) return;
-      await api("/wf_mkdir", { folder: name.value });
-      await load(true);
-      V.wf.newFolder = false;
-      toast("folder created");
-      paint();
-    });
-    const cancel = btn("cancel", null, () => {
-      V.wf.newFolder = false;
-      paint();
-    });
-    row.append(name, go, cancel);
-    bar.appendChild(row);
-  }
 
   const tree = el("div", "rt-scroll");
   tree.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
@@ -1401,6 +1381,12 @@ function buildWorkflowBar() {
     pin.title = "pin this folder to the top";
     headRow.appendChild(pin);
     headRow.appendChild(el("span", "rt-name", label));
+    const sub = btn("+", "icon", () => {
+      V.wf.newFolder = folder;
+      paint();
+    });
+    sub.title = "new subfolder inside " + folder;
+    headRow.appendChild(sub);
     headRow.appendChild(el("span", "rt-spacer"));
     headRow.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
     if (V.wf.sort === "custom") {
@@ -1439,6 +1425,39 @@ function buildWorkflowBar() {
       kids.get(parent).push(f);
     }
     folderBlock(ROOT_KEY, kids, byFolder, 0);
+
+    // Folder creation lives where the folders are, inline at the end of the list,
+    // not in a header button that reads like "new tab".
+    if (V.wf.newFolder !== null) {
+      function newFolderRow() {
+        const row = el("div", "rt-newfolder");
+        const name = input("rt-grow", V.wf.newFolder ? V.wf.newFolder + "/" : "", "new folder name");
+        row.append(
+          name,
+          btn("create", "pri", async () => {
+            if (!name.value.trim()) return;
+            await api("/wf_mkdir", { folder: name.value });
+            await load(true);
+            V.wf.newFolder = null;
+            toast("folder created");
+            paint();
+          }),
+          btn("cancel", null, () => {
+            V.wf.newFolder = null;
+            paint();
+          })
+        );
+        return row;
+      }
+      tree.appendChild(newFolderRow());
+    } else {
+      const add = el("button", "rt-add", "+ new folder");
+      add.onclick = () => {
+        V.wf.newFolder = "";
+        paint();
+      };
+      tree.appendChild(add);
+    }
     const shown = S.workflows.filter(wfMatches).length;
     tree.appendChild(el("div", "rt-dim", `${shown} of ${S.workflows.length} workflows`));
   }
@@ -1527,10 +1546,11 @@ function buildModelsBar() {
       paint();
     }
   );
-  const dir = btn(V.model.desc ? "↓ desc" : "↑ asc", "icon", () => {
+  const dir = btn(V.model.desc ? "↓" : "↑", "icon", () => {
     V.model.desc = !V.model.desc;
     paint();
   });
+  dir.title = V.model.desc ? "descending — click for ascending" : "ascending — click for descending";
   toolbar.append(search, sort, dir);
   bar.appendChild(toolbar);
 
