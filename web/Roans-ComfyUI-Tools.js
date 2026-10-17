@@ -70,6 +70,11 @@ const CSS = `
 .rt-hint { font-size:10px; opacity:.45; }
 .rt-flash { animation:rtflash .9s ease-out; }
 @keyframes rtflash { from { border-color:var(--p-primary-color,#7aa2f7); } }
+.rt-native-block { margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color,#3a3a3a); }
+.rt-native-block .rt-sec:after { content:""; flex:1; height:1px; background:var(--border-color,#3a3a3a); }
+.rt-native-editor { display:flex; flex-direction:column; gap:7px; margin-top:7px;
+      border:1px solid var(--p-primary-color,#7aa2f7); border-radius:9px; padding:9px;
+      background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 75%, transparent); }
 `;
 
 function injectStyles() {
@@ -226,147 +231,91 @@ async function pollUi() {
 }
 let pollTimer = null;
 
-/* ----------------------------------------------------------- models tab */
+/* -------------------------------------- ComfyUI's own Models panel, enhanced */
 
-function renderModels(root) {
-  injectStyles();
-  root.innerHTML = "";
-  const wrap = el("div", "rt");
+const NATIVE_PREVIEW = "#model-library-model-preview-container, .model-lib-model-preview";
+const NATIVE_ROW = ".model-lib-node-container";
+const NATIVE_TAB = "[data-testid='model-library-tab-button']";
 
-  const bar = el("div", "rt-bar");
-  const search = input("rt-grow", V.model.q, "search models…");
-  search.oninput = () => {
-    V.model.q = search.value;
-    paintModels();
+function modelFor(text) {
+  if (!text) return null;
+  const t = text.trim();
+  const lower = t.toLowerCase();
+  return (
+    S.models.find((m) => m.filename === t) ||
+    S.models.find((m) => lower.includes(m.filename.toLowerCase())) ||
+    S.models.find((m) => m.name.length > 5 && lower.includes(m.name.toLowerCase())) ||
+    null
+  );
+}
+
+/** The editor shown inside ComfyUI's own preview card. Saves through our API. */
+function nativeEditor(m, onSaved) {
+  const box = el("div", "rt-native-editor");
+  const f = {
+    link: input(null, m.link, "civitai / huggingface url"),
+    base: input(null, m.base || m.base_detected, m.base_detected || "base model"),
+    file_type: input(null, m.file_type, m.file_type_detected ? `detected: ${m.file_type_detected}` : "file type"),
+    version: input(null, m.version || m.version_suggested, "downloaded version"),
+    rank: input(null, m.rank, "your verdict"),
+    why: input(null, m.why, "why you downloaded it"),
+    keyword: input(null, m.keyword, "lora trigger keyword"),
   };
-  const sort = select(
-    [["name", "sort: name"], ["size", "sort: size"], ["date", "sort: newest"], ["type", "sort: type"]],
-    V.model.sort,
-    (v) => {
-      V.model.sort = v;
-      paintModels();
-    }
+  box.append(
+    field("Link", f.link),
+    el("div", "rt-row2", field("Base model", f.base), field("File type", f.file_type)),
+    el("div", "rt-row2", field("Version", f.version), field("Rank?", f.rank)),
+    el("div", "rt-row2", field("Why?", f.why), field("Keyword", f.keyword))
   );
-  const group = select(
-    [["type", "group: type"], ["folder", "group: folder"], ["rank", "group: rank"], ["why", "group: why"], ["none", "group: none"]],
-    V.model.group,
-    (v) => {
-      V.model.group = v;
-      paintModels();
-    }
+  const note = area(m.note, "notes");
+  box.appendChild(field("Notes", note));
+  const actions = el("div", "rt-actions");
+  actions.append(
+    btn("save", "pri", async () => {
+      await api("/model", {
+        filename: m.filename,
+        name: m.name,
+        model_type: m.model_type,
+        file_type: f.file_type.value,
+        version: f.version.value,
+        base: f.base.value,
+        link: f.link.value,
+        rank: f.rank.value,
+        why: f.why.value,
+        keyword: f.keyword.value,
+        note: note.value,
+      });
+      toast("saved " + m.filename);
+      await load(true);
+      onSaved();
+    }),
+    btn("cancel", null, () => box.remove())
   );
-  const rescan = btn("rescan", null, async () => {
-    await api("/rescan", {});
-    await load(true);
-    paintModels();
-    toast("rescanned the model folders");
-  });
-  bar.append(search, sort, group, rescan);
-  wrap.appendChild(bar);
+  box.appendChild(actions);
+  return box;
+}
 
-  const chips = el("div", "rt-bar");
-  chips.style.paddingTop = "0";
-  wrap.appendChild(chips);
+/**
+ * ComfyUI's Models panel is a built-in Vue component and cannot be edited from the
+ * outside. Its DOM can be augmented though: we append our row data to the model
+ * preview card, and a MutationObserver re-attaches it after every Vue re-render.
+ */
+function enhanceNativeModelLibrary() {
+  let injecting = false;
 
-  const list = el("div", "rt-scroll");
-  wrap.appendChild(list);
+  function buildBlock(host, m) {
+    const block = el("div", "rt-native-block");
+    block.dataset.for = m.filename;
 
-  const fieldText = (m) =>
-    [m.name, m.filename, m.why, m.keyword, m.rank, m.note, m.base, m.version, m.model_type, m.file_type]
-      .concat(m.auto_tags || [])
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-  function paintChips() {
-    chips.innerHTML = "";
-    const counts = {};
-    for (const m of S.models) counts[m.model_type] = (counts[m.model_type] || 0) + 1;
-    const opts = [["All", S.models.length], ...Object.entries(counts).sort()];
-    for (const [t, n] of opts) {
-      const c = el("button", "rt-chip" + (V.model.type === t ? " on" : ""), `${t} ${n}`);
-      c.onclick = () => {
-        V.model.type = t;
-        paintModels();
-      };
-      chips.appendChild(c);
-    }
-  }
-
-  function editForm(m) {
-    const form = el("div", "rt-form");
-    const f = {};
-    const fName = input(null, m.name, "display name");
-    const fVer = input(null, m.version || m.version_suggested,
-      m.version_suggested ? `suggested: ${m.version_suggested}` : "e.g. v1.0");
-    const fBase = input(null, m.base || m.base_detected, m.base_detected || "base model");
-    const fType = input(null, m.file_type, m.file_type_detected ? `detected: ${m.file_type_detected}` : "file type");
-    const fLink = input(null, m.link, "civitai / huggingface url");
-    const fWhy = input(null, m.why, "why you downloaded it");
-    const fRank = input(null, m.rank, "your verdict");
-    const fKw = input(null, m.keyword, "lora trigger keyword");
-    Object.assign(f, { name: fName, version: fVer, base: fBase, file_type: fType, link: fLink, why: fWhy, rank: fRank, keyword: fKw });
-    const fNote = area(m.note, "notes");
-    const fModelType = input(null, m.model_type);
-    fModelType.readOnly = true;
-    form.append(
-      field("Name", fName),
-      field("Filename", el("div", "rt-mono", m.filename)),
-      el("div", "rt-row2",
-        field("Model Type", fModelType, "set by the folder it lives in"),
-        field("File Type", fType, m.file_type_detected ? `detected: ${m.file_type_detected}` : "")),
-      el("div", "rt-row2", field("Downloaded Version", fVer), field("Base model", fBase)),
-      field("Link", fLink),
-      el("div", "rt-row2", field("Why?", fWhy), field("Rank?", fRank)),
-      field("Lora Keyword", fKw),
-      field("Notes", fNote)
-    );
-    const actions = el("div", "rt-actions");
-    actions.append(
-      btn("save", "pri", async () => {
-        await api("/model", {
-          filename: m.filename,
-          name: f.name.value,
-          model_type: m.model_type,
-          file_type: f.file_type.value,
-          version: f.version.value,
-          base: f.base.value,
-          link: f.link.value,
-          why: f.why.value,
-          rank: f.rank.value,
-          keyword: f.keyword.value,
-          note: fNote.value,
-        });
-        toast("saved " + m.name);
-        await load(true);
-        paintModels();
-      }),
-      btn("cancel", null, () => {
-        V.model.open.delete(m.filename);
-        paintModels();
-      })
-    );
-    form.appendChild(actions);
-    return form;
-  }
-
-  function card(m) {
-    const c = el("div", "rt-card");
     const head = el("div", "rt-head");
-    head.appendChild(el("span", "rt-title", m.name));
-    head.appendChild(badge(m.model_type, "t"));
-    if (m.file_type) head.appendChild(badge(m.file_type));
+    head.appendChild(el("span", "rt-sec", "Roans ComfyUI Tools"));
     head.appendChild(el("span", "rt-spacer"));
-    head.appendChild(el("span", "rt-dim", size(m.size)));
-    head.appendChild(
-      btn(V.model.open.has(m.filename) ? "close" : "edit", "icon", () => {
-        if (V.model.open.has(m.filename)) V.model.open.delete(m.filename);
-        else V.model.open.add(m.filename);
-        paintModels();
-      })
-    );
-    c.appendChild(head);
-    c.appendChild(el("div", "rt-mono", m.filename));
+    head.appendChild(btn("edit", "icon", () => {
+      const existing = block.querySelector(".rt-native-editor");
+      if (existing) return existing.remove();
+      block.appendChild(nativeEditor(m, () => paintBlock(host, m)));
+    }));
+    block.appendChild(head);
 
     const grid = el("div", "rt-grid");
     const put = (k, v, dim) => {
@@ -382,56 +331,89 @@ function renderModels(root) {
         grid.appendChild(el("div", "rt-v" + (dim ? " rt-dim" : ""), v));
       }
     };
+    put("File type", m.file_type || m.file_type_detected, !m.file_type);
     put("Version", m.version || m.version_suggested, !m.version);
     put("Base", m.base || m.base_detected, !m.base);
-    put("Link", m.link);
-    put("Why?", m.why);
     put("Rank?", m.rank);
+    put("Why?", m.why);
     put("Keyword", m.keyword);
-    if (m.lora_dim) put("Lora dim", m.lora_dim);
+    put("Lora dim", m.lora_dim);
     if (m.auto_tags?.length) put("Trained on", m.auto_tags.join(", "), true);
     put("Notes", m.note);
-    if (grid.children.length) c.appendChild(grid);
+    block.appendChild(grid);
 
-    if (V.model.open.has(m.filename)) c.appendChild(editForm(m));
-    return c;
+    if (m.link) {
+      const a = el("a", "rt-btn", "open model page ↗");
+      a.href = m.link;
+      a.target = "_blank";
+      a.style.display = "inline-block";
+      a.style.textDecoration = "none";
+      const row = el("div", "rt-actions");
+      row.appendChild(a);
+      block.appendChild(row);
+    }
+    if (!m.link) {
+      const row = el("div", "rt-actions");
+      row.appendChild(btn("add a link", null, () => {
+        const existing = block.querySelector(".rt-native-editor");
+        if (existing) return existing.remove();
+        block.appendChild(nativeEditor(m, () => paintBlock(host, m)));
+      }));
+      block.appendChild(row);
+    }
+    return block;
   }
 
-  function paintModels() {
-    paintChips();
-    list.innerHTML = "";
-    const q = V.model.q.trim().toLowerCase();
-    let rows = S.models.filter((m) => (V.model.type === "All" || m.model_type === V.model.type) && (!q || fieldText(m).includes(q)));
-    const by = {
-      type: (a, b) => (a.model_type + a.name).localeCompare(b.model_type + b.name),
-      name: (a, b) => a.name.localeCompare(b.name),
-      size: (a, b) => b.size - a.size,
-      date: (a, b) => b.modified - a.modified,
-    }[V.model.sort];
-    rows = rows.slice().sort(by);
-    if (!rows.length) {
-      list.appendChild(el("div", "rt-empty", "no models match"));
-      return;
-    }
-    const keyFns = {
-      type: (m) => m.model_type,
-      folder: (m) => m.folder,
-      rank: (m) => m.rank,
-      why: (m) => m.why,
-    };
-    if (V.model.group === "none" || !keyFns[V.model.group]) {
-      for (const m of rows) list.appendChild(card(m));
-      return;
-    }
-    for (const [key, items] of groupItems(rows, keyFns[V.model.group])) {
-      const { head, isOpen } = section("model:" + key, key, items.length, V.model.collapsed, paintModels);
-      list.appendChild(head);
-      if (isOpen) for (const m of items) list.appendChild(card(m));
+  function paintBlock(host, m) {
+    host.querySelector(".rt-native-block")?.remove();
+    host.appendChild(buildBlock(host, m));
+  }
+
+  /** mark rows in the tree that have a saved link / verdict */
+  function markRows() {
+    for (const row of document.querySelectorAll(NATIVE_ROW)) {
+      const label = (row.textContent || "").trim();
+      const m = modelFor(label);
+      if (!m || row.dataset.rtRowed === m.filename) continue;
+      row.dataset.rtRowed = m.filename;
+      row.querySelector(".rt-row-dot")?.remove();
+      if (m.link || m.rank || m.why) {
+        const dot = el("span", "rt-row-dot", m.link ? "🔗" : "★");
+        dot.title = [m.file_type, m.rank, m.why].filter(Boolean).join(" · ") || "you have notes for this model";
+        dot.style.cssText = "font-size:9px;opacity:.75;margin-left:4px;";
+        row.appendChild(dot);
+      }
     }
   }
 
-  paintModels();
-  return paintModels;
+  function inject() {
+    if (injecting) return;
+    const host = document.querySelector(NATIVE_PREVIEW);
+    if (!host) return;
+    const fn = host.querySelector(".model_preview_filename")?.textContent;
+    const title = host.querySelector(".model_preview_title")?.textContent;
+    const m = modelFor(fn) || modelFor(title);
+    if (!m) return;
+    const current = host.querySelector(".rt-native-block");
+    if (current?.dataset.for === m.filename) return;
+    injecting = true;
+    try {
+      paintBlock(host, m);
+    } finally {
+      injecting = false;
+    }
+  }
+
+  const obs = new MutationObserver(() => {
+    inject();
+    markRows();
+    decorateNativeTabs();
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  inject();
+  markRows();
+  decorateNativeTabs();
+  console.log("[Roans-ComfyUI-Tools] ComfyUI's Models panel enhancer installed");
 }
 
 /* ---------------------------------------------------------- prompts tab */
@@ -488,6 +470,7 @@ function renderPrompts(root) {
   injectStyles();
   root.innerHTML = "";
   const wrap = el("div", "rt");
+  root.appendChild(wrap);
 
   const bar = el("div", "rt-bar");
   const search = input("rt-grow", V.prompt.q, "search prompts, tags…");
@@ -692,90 +675,239 @@ function renderPrompts(root) {
 
 let repaint = () => {};
 
-/* ---- replace ComfyUI's own Models tab (it ships one called model-library) ---- */
+/* ---------------- your pfp as a badge on the NATIVE tab buttons --------------- */
 
-const HIDE_CORE_SETTING = "RoansComfyUITools.HideCoreModelsTab";
+// The avatar is served out of our own web dir. It is gitignored — a fresh clone
+// simply has no badge (img.onerror removes it), so nothing personal goes public.
+const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
+const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
+const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
 
-function coreTabIds() {
-  try {
-    return (app.extensionManager.getSidebarTabs?.() || []).map((t) => t.id);
-  } catch (e) {
-    return [];
+/**
+ * Badges the sidebar tab buttons that this extension is enhancing. The buttons
+ * themselves are ComfyUI's: we only append an <img> inside them, and set
+ * position/overflow if the native styling would clip it. Vue re-renders the strip
+ * from scratch, so this is called from an observer as well as on demand.
+ */
+function decorateNativeTabs() {
+  for (const id of AVATAR_TABS) {
+    const btn = document.querySelector(`[data-testid="${id}-tab-button"]`);
+    if (!btn || btn.querySelector(".rt-avatar-badge")) continue;
+    const cs = getComputedStyle(btn);
+    if (cs.position === "static") btn.style.position = "relative";
+    if (cs.overflow === "hidden") btn.style.overflow = "visible";
+    const img = el("img", "rt-avatar-badge");
+    img.src = AVATAR_URL;
+    img.alt = "";
+    img.draggable = false;
+    img.style.cssText = [
+      "position:absolute",
+      "right:1px",
+      "bottom:1px",
+      `width:${AVATAR_SIZE}px`,
+      `height:${AVATAR_SIZE}px`,
+      "border-radius:50%",
+      "object-fit:cover",
+      "pointer-events:none",
+      "z-index:5",
+      "box-shadow:0 0 0 1px rgba(0,0,0,.6)",
+    ].join(";");
+    img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
+    btn.appendChild(img);
   }
 }
-function dropCoreModelsTab() {
-  if (coreTabIds().includes("model-library")) {
+
+/**
+ * Sidebar tabs in this frontend are rendered as Vue components (`type: "vue"` +
+ * `component`), not via the older `type: "custom"` + `render(el)` contract — a
+ * custom tab gets a working button but an empty panel. So we pull the Vue runtime
+ * the frontend already loaded, discovered through the served asset names (the hash
+ * changes every version, so it is never hardcoded), and hand over a real component.
+ */
+async function loadVue() {
+  const html = await (await fetch("/", { cache: "no-store" })).text();
+  const entry = html.match(/assets\/index-[\w-]+\.js/)?.[0];
+  if (!entry) throw new Error("entry chunk not found");
+  const src = await (await fetch("/" + entry, { cache: "no-store" })).text();
+  const vueChunk = src.match(/vendor-vue-core-[\w-]+\.js/)?.[0];
+  if (!vueChunk) throw new Error("vue core chunk not found");
+  const mod = await import(/* @vite-ignore */ new URL("/assets/" + vueChunk, location.origin).href);
+  // the chunk may expose the API as named exports or behind a default object
+  const vue =
+    typeof mod?.defineComponent === "function"
+      ? mod
+      : typeof mod?.default?.defineComponent === "function"
+        ? mod.default
+        : null;
+  if (!vue) throw new Error("vue API not found; exports: " + Object.keys(mod || {}).join(","));
+  return vue;
+}
+
+function makeTabComponent(Vue, painter) {
+  const paint = async (host) => {
+    await load();
+    painter(host);
+  };
+  return Vue.defineComponent({
+    name: "RoansComfyUITab",
+    setup() {
+      const host = Vue.ref(null);
+      Vue.onMounted(async () => {
+        repaint = () => host.value && paint(host.value);
+        if (host.value) await paint(host.value);
+      });
+      return () => Vue.h("div", { ref: host, class: "rt-host", style: "height:100%" });
+    },
+  });
+}
+
+/**
+ * Registers the tab. Prefers the native `vue` component form (that is what this
+ * frontend renders for sidebar tabs); if anything about that fails we still get a
+ * working button via the older `custom` + `render` contract, and the panel shows
+ * one line explaining it, rather than the tab silently not existing.
+ */
+function registerTab(base, painter, Vue) {
+  if (Vue) {
     try {
-      app.extensionManager.unregisterSidebarTab("model-library");
+      app.extensionManager.registerSidebarTab({
+        ...base,
+        type: "vue",
+        component: makeTabComponent(Vue, painter),
+      });
+      console.log("[Roans-ComfyUI-Tools] registered as a native vue tab");
+      return "vue";
     } catch (e) {
-      console.log("[Roans-ComfyUI-Tools] could not remove core Models tab:", e);
+      console.warn("[Roans-ComfyUI-Tools] vue tab registration failed, using custom:", e);
     }
   }
-  return !coreTabIds().includes("model-library");
-}
-function syncCoreModelsTab() {
-  let on = true;
   try {
-    const v = app.extensionManager.setting?.get?.(HIDE_CORE_SETTING);
-    if (typeof v === "boolean") on = v;
-  } catch (e) {}
-  if (!on) return;
-  // core tabs are registered during app init, so retry briefly rather than assume order
-  if (dropCoreModelsTab()) {
-    console.log("[Roans-ComfyUI-Tools] removed ComfyUI's built-in Models tab");
-    return;
+    app.extensionManager.registerSidebarTab({
+      ...base,
+      type: "custom",
+      render: async (root) => {
+        try {
+          await load();
+          painter(root);
+        } catch (e) {
+          root.innerHTML = `<div style="padding:12px;font-size:12px;opacity:.7">library api unreachable<br>${e}</div>`;
+        }
+      },
+    });
+    console.log("[Roans-ComfyUI-Tools] registered as a custom tab");
+    return "custom";
+  } catch (e) {
+    console.error("[Roans-ComfyUI-Tools] could not register the tab:", e);
+    toast("could not add the Prompts tab: " + e, "error");
+    return null;
   }
-  let tries = 0;
-  const t = setInterval(() => {
-    if (dropCoreModelsTab() || ++tries > 12) {
-      clearInterval(t);
-      if (tries <= 12) console.log("[Roans-ComfyUI-Tools] removed ComfyUI's built-in Models tab");
+}
+
+/**
+ * Fallback for when neither tab contract renders a panel in this frontend build.
+ * The tab BUTTON is real (ComfyUI still draws it and still owns it); we listen to
+ * which tab is active and mount our own panel beside the strip while ours is
+ * selected, then remove it from view when another tab is picked.
+ */
+let fallbackPanel = null;
+function mountFallbackPanel(painter) {
+  if (fallbackPanel) return;
+  const panel = el("div", "rt-float");
+  panel.style.cssText = [
+    "position:fixed",
+    "left:46px",
+    "top:44px",
+    "bottom:46px",
+    "width:400px",
+    "max-width:46vw",
+    "background:var(--comfy-menu-bg,#1c1c1c)",
+    "border:1px solid var(--border-color,#3a3a3a)",
+    "border-radius:10px",
+    "box-shadow:0 10px 30px rgba(0,0,0,.5)",
+    "z-index:60",
+    "display:none",
+    "overflow:hidden",
+  ].join(";");
+  const host = el("div", "rt-host");
+  host.style.cssText = "height:100%;overflow:hidden;";
+  panel.appendChild(host);
+  document.body.appendChild(panel);
+  fallbackPanel = panel;
+
+  const paint = async () => {
+    try {
+      await load();
+      painter(host);
+      repaint = paint;
+    } catch (e) {
+      host.innerHTML = `<div style="padding:12px;font-size:12px;opacity:.7">library api unreachable<br>${e}</div>`;
     }
-  }, 400);
+  };
+
+  const tick = () => {
+    let activeId = null;
+    try {
+      const s = app.extensionManager?.sidebarTab;
+      const store = s && typeof s === "object" && "value" in s ? s.value : s;
+      activeId = store?.activeSidebarTabId;
+    } catch (e) {}
+
+    const btn = document.querySelector('[data-testid="roansPrompts-tab-button"]');
+    if (btn && !btn.dataset.rtWired) {
+      btn.dataset.rtWired = "1";
+      btn.addEventListener("click", () => {
+        panel.dataset.forced = panel.style.display === "block" ? "0" : "1";
+        tick();
+      });
+    }
+
+    const on = activeId === "roansPrompts" || panel.dataset.forced === "1";
+    panel.style.display = on ? "block" : "none";
+    if (on && !host.dataset.painted) {
+      host.dataset.painted = "1";
+      paint();
+    }
+  };
+  tick();
+  setInterval(tick, 400);
+  console.log("[Roans-ComfyUI-Tools] panel mounted beside the sidebar");
 }
 
 app.registerExtension({
   name: "roans.comfyui.tools",
-  settings: [
-    {
-      id: HIDE_CORE_SETTING,
-      name: "Hide ComfyUI's built-in Models tab (Roans ComfyUI Tools supplies its own)",
-      type: "boolean",
-      defaultValue: true,
-      onChange: () => {
-        toast("reload the page to apply", "info");
-      },
-    },
-  ],
   async setup() {
     await load().catch(() => null);
 
-    const make = (id, icon, title, tooltip, painter) => {
-      app.extensionManager.registerSidebarTab({
-        id,
-        icon,
-        title,
-        tooltip,
-        type: "custom",
-        destroy: () => {
-          if (pollTimer) clearInterval(pollTimer);
-        },
-        render: async (root) => {
-          try {
-            await load();
-            repaint = painter(root);
-          } catch (e) {
-            root.innerHTML = `<div style="padding:12px;font-size:12px;opacity:.7">library api unreachable<br>${e}</div>`;
-          }
-        },
-      });
-    };
+    // install the native-panel enhancer and the tab badges first, so a failure
+    // while registering our own tab can never take them down with it
+    enhanceNativeModelLibrary();
 
-    make("roansModels", "pi pi-database", "Models", "Local models, links and notes", renderModels);
-    make("roansPrompts", "pi pi-comment", "Prompts", "Saved prompts plus prompts pulled from your workflows", renderPrompts);
+    let Vue = null;
+    try {
+      Vue = await loadVue();
+      console.log("[Roans-ComfyUI-Tools] Vue runtime loaded");
+    } catch (e) {
+      console.warn("[Roans-ComfyUI-Tools] could not load Vue:", e);
+    }
 
-    syncCoreModelsTab();
+    // Prompts is the only NEW tab. Models is ComfyUI's own panel, enhanced in place
+    // by enhanceNativeModelLibrary() rather than replaced with a second button.
+    const mode = registerTab(
+      {
+        id: "roansPrompts",
+        icon: "pi pi-comment",
+        title: "Prompts",
+        tooltip: "Saved prompts plus prompts pulled from your workflows",
+      },
+      renderPrompts,
+      Vue
+    );
+
+    // if the tab registered as a component, ComfyUI renders the panel itself;
+    // otherwise we draw the panel next to the strip while our tab is active
+    mountFallbackPanel(renderPrompts);
+
     pollTimer = setInterval(pollUi, 4000);
-    console.log("[Roans-ComfyUI-Tools] Models + Prompts tabs registered");
+    console.log("[Roans-ComfyUI-Tools] setup complete; enhancing ComfyUI's Models panel");
   },
 });
