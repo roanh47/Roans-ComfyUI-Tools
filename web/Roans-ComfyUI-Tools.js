@@ -1101,6 +1101,22 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  if (!RT_STATS.selfTested) {
+    RT_STATS.selfTested = true;
+    const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
+    if (b) {
+      const before = String(V.wf.newFolder);
+      b.click();
+      RT_STATS.selfTest = {
+        found: true,
+        before,
+        after: String(V.wf.newFolder),
+        slotChildren: document.querySelectorAll(".rt-folderslot > *").length,
+      };
+    } else {
+      RT_STATS.selfTest = { found: false };
+    }
+  }
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
@@ -1150,6 +1166,8 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    wfQ: V.wf.q,
+    wfSortState: `${V.wf.sort}/${V.wf.desc}`,
     hit,
     descNow,
     stats: RT_STATS,
