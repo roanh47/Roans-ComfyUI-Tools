@@ -232,7 +232,11 @@ _ERRS = []
 
 async def post_err(request):
     """Errors the page hit, reported from the browser — send them here."""
+    global _ERRS
     data = await _body(request)
+    if data.get("clear"):
+        _ERRS = []
+        return web.json_response({"ok": True, "cleared": True})
     _ERRS.append(data)
     del _ERRS[:-40]
     return web.json_response({"ok": True, "count": len(_ERRS)})

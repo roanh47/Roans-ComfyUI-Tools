@@ -1298,30 +1298,6 @@ function reportDiag() {
     }
     return out;
   })();
-  if (!RT_STATS.menuProbed && document.querySelector(".rt-wf-bar .rt-card")) {
-    RT_STATS.menuProbed = true;
-    const card = document.querySelector(".rt-wf-bar .rt-card");
-    const fake = new MouseEvent("contextmenu", { bubbles: true, clientX: 120, clientY: 120 });
-    card.dispatchEvent(fake);
-    RT_STATS.menuProbe = [...document.querySelectorAll(".rt-menu .rt-menu-item, .rt-menu .rt-menu-head")]
-      .map((m) => m.textContent.trim())
-      .slice(0, 30);
-    closeContextMenu();
-  }
-  if (!RT_STATS.mdDetailProbed && document.querySelector(".rt-md-bar .rt-card")) {
-    RT_STATS.mdDetailProbed = true;
-    const first = S.models && S.models[0];
-    if (first) {
-      V.model.open.add(first.filename);
-      if (RT_MD_PAINT) RT_MD_PAINT();
-      RT_STATS.mdDetailProbe = {
-        labels: [...document.querySelectorAll(".rt-md-bar .rt-detail .rt-k")].map((n) => n.textContent),
-        inputs: [...document.querySelectorAll(".rt-md-bar .rt-detail input")].map((i) => i.placeholder || "(no placeholder)"),
-        hasLinkButton: !!document.querySelector(".rt-md-bar .rt-card .rt-btn[title^='http']"),
-      };
-      V.model.open.delete(first.filename);
-    }
-  }
   const hit = (() => {
     const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
     if (!b) return "no folder button";
@@ -1371,13 +1347,11 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
-    mdDetail: RT_STATS.mdDetailProbe,
     menuOpened: RT_STATS.menuOpened || 0,
     lastMenuAt: RT_STATS.lastMenuAt || null,
     lastMenuError: RT_STATS.lastMenuError || null,
     events: RT_EVENTS.slice(-24),
     rowCheck,
-    menuProbe: RT_STATS.menuProbe,
     census,
     native,
     wfQ: V.wf.q,
