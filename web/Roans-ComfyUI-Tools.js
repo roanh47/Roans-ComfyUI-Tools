@@ -75,6 +75,12 @@ const CSS = `
 .rt-native-editor { display:flex; flex-direction:column; gap:7px; margin-top:7px;
       border:1px solid var(--p-primary-color,#7aa2f7); border-radius:9px; padding:9px;
       background:color-mix(in srgb, var(--comfy-input-bg,#1e1e1e) 75%, transparent); }
+
+.rt-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+.rt-card { min-width: 0; }
+.rt-head { min-width: 0; }
+.rt-wf-bar .rt-scroll, .rt-md-bar .rt-scroll { overflow-x: hidden; }
+.rt-dim { white-space: nowrap; }
 `;
 
 function injectStyles() {
@@ -912,18 +918,34 @@ function tabIsActive(tabId) {
 let _rtHidden = [];
 
 function hideNativeSiblings(host, bar) {
-  // Safety: never do this to a container that is shared with other tabs.
-  if (host.querySelector("[data-testid$='-tab-button']")) return false;
-  if (host.querySelector(".model-lib-tree-explorer") || host.querySelector(".rt-md-bar")) return false;
-  let hid = 0;
-  for (const child of [...host.children]) {
-    if (child === bar || child.dataset.rtHidden === "1") continue;
-    if (!child.tagName || child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
-    child.dataset.rtHidden = "1";
-    child.style.display = "none";
-    _rtHidden.push(child);
-    hid += 1;
+  // ComfyUI's tab template puts its own search box and list in slots around the
+  // panel body, so hiding only the panel's children is not enough. Walk up from
+  // our bar and darken every branch that does not lead to it.
+  // Safety: never touch a container that holds the tab buttons themselves.
+  let container = host;
+  for (let i = 0; i < 4 && container && container.parentElement; i += 1) {
+    container = container.parentElement;
+    if (container.classList && container.classList.contains("comfy-vue-side-bar-container")) break;
   }
+  if (!container || !container.contains(bar)) return false;
+  if (container.querySelector("[data-testid$='-tab-button']")) return false;
+  let hid = 0;
+  const walk = (node) => {
+    for (const child of [...node.children]) {
+      if (child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
+      if (child.contains(bar)) {
+        walk(child); // keep descending along the path to our bar
+        continue;
+      }
+      if (child.dataset.rtHidden === "1") continue;
+      child.dataset.rtHidden = "1";
+      child.style.display = "none";
+      _rtHidden.push(child);
+      hid += 1;
+    }
+  };
+  walk(container);
+  if (hid) console.log(`[Roans-ComfyUI-Tools] hid ${hid} native element(s) behind the takeover`);
   return hid > 0;
 }
 
@@ -1010,7 +1032,17 @@ function reportDiag() {
         text: (k.innerText || "").replace(/\s+/g, " ").slice(0, 50),
       }))
     : [];
-  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs, bodyKids };
+  const hiddenNow = [...document.querySelectorAll("[data-rt-hidden]")].map((el) => ({
+    tag: el.tagName.toLowerCase(),
+    cls: (el.className || "").toString().slice(0, 50),
+    text: (el.innerText || "").replace(/\s+/g, " ").slice(0, 40),
+  }));
+  const barParentKids = (() => {
+    const b = document.querySelector(".rt-wf-bar");
+    const p = b && b.parentElement;
+    return p ? [...p.children].map((k) => ({ tag: k.tagName.toLowerCase(), cls: (k.className || "").toString().slice(0, 40), display: k.style.display, visible: !!k.getClientRects().length })) : [];
+  })();
+  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs, bodyKids, hiddenNow, barParentKids };
 }
 
 async function sendDiag() {
