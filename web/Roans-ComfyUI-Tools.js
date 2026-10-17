@@ -506,6 +506,7 @@ function enhanceNativeModelLibrary() {
       markRows();
       decorateNativeTabs();
       enhanceNativeWorkflows();
+      enhanceNativeModels();
     });
   });
   obs.observe(document.body, { childList: true, subtree: true });
@@ -513,6 +514,7 @@ function enhanceNativeModelLibrary() {
   markRows();
   decorateNativeTabs();
   enhanceNativeWorkflows();
+      enhanceNativeModels();
   console.log("[Roans-ComfyUI-Tools] ComfyUI's Models panel enhancer installed");
 }
 
