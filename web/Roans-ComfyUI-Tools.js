@@ -502,11 +502,11 @@ function enhanceNativeModelLibrary() {
     queued = true;
     requestAnimationFrame(() => {
       queued = false;
-      inject();
-      markRows();
-      decorateNativeTabs();
-      enhanceNativeWorkflows();
-      enhanceNativeModels();
+      rtGuard('inject', inject)();
+      rtGuard('markRows', markRows)();
+      rtGuard('decorateNativeTabs', decorateNativeTabs)();
+      rtGuard('enhanceNativeWorkflows', enhanceNativeWorkflows)();
+      rtGuard('enhanceNativeModels', enhanceNativeModels)();
       if (!window.__rtDiagAt || Date.now() - window.__rtDiagAt > 4000) {
         window.__rtDiagAt = Date.now();
         sendDiag();
@@ -514,11 +514,11 @@ function enhanceNativeModelLibrary() {
     });
   });
   obs.observe(document.body, { childList: true, subtree: true });
-  inject();
-  markRows();
-  decorateNativeTabs();
-  enhanceNativeWorkflows();
-      enhanceNativeModels();
+  rtGuard('inject', inject)();
+  rtGuard('markRows', markRows)();
+  rtGuard('decorateNativeTabs', decorateNativeTabs)();
+  rtGuard('enhanceNativeWorkflows', enhanceNativeWorkflows)();
+      rtGuard('enhanceNativeModels', enhanceNativeModels)();
       if (!window.__rtDiagAt || Date.now() - window.__rtDiagAt > 4000) {
         window.__rtDiagAt = Date.now();
         sendDiag();
@@ -848,6 +848,45 @@ function decorateNativeTabs() {
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
     btn.appendChild(img);
   }
+}
+
+/* ---- error reporting -------------------------------------------------------- */
+
+// If anything in here throws, the page tells the backend instead of dying quietly.
+function rtErr(where, err) {
+  try {
+    fetch("/Roans-ComfyUI-Tools/api/err", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        where,
+        message: (err && (err.message || String(err))) || "unknown",
+        stack: (err && err.stack ? String(err.stack).slice(0, 600) : ""),
+        at: new Date().toISOString(),
+      }),
+    });
+  } catch (e) {
+    /* nothing left to do */
+  }
+  console.warn("[Roans-ComfyUI-Tools]", where, err);
+}
+window.addEventListener("error", (e) => {
+  if ((e.filename || "").includes("Roans-ComfyUI-Tools")) rtErr("window.onerror " + (e.lineno || ""), e.error || new Error(e.message));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  if (String(r && (r.stack || r.message || r)).includes("Roans-ComfyUI-Tools")) rtErr("unhandledrejection", r);
+});
+
+function rtGuard(where, fn) {
+  return (...args) => {
+    try {
+      return fn(...args);
+    } catch (err) {
+      rtErr(where, err);
+      return undefined;
+    }
+  };
 }
 
 /* ---- tab-aware injection ---------------------------------------------------- */

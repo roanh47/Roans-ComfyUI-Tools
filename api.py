@@ -188,6 +188,21 @@ async def post_wf_move(request):
 _DIAG = {}
 
 
+_ERRS = []
+
+
+async def post_err(request):
+    """Errors the page hit, reported from the browser — send them here."""
+    data = await _body(request)
+    _ERRS.append(data)
+    del _ERRS[:-40]
+    return web.json_response({"ok": True, "count": len(_ERRS)})
+
+
+async def get_err(request):
+    return web.json_response(_ERRS)
+
+
 async def post_diag(request):
     """The frontend reports its own DOM facts here — the only way to see the real
     page structure when no browser console is available."""
@@ -267,6 +282,8 @@ ROUTES = {
     ("POST", "wf_move"): post_wf_move,
     ("POST", "model_meta"): post_model_meta,
     ("POST", "diag"): post_diag,
+    ("POST", "err"): post_err,
+    ("GET", "err"): get_err,
     ("GET", "diag"): get_diag,
     ("POST", "model_folder"): post_model_folder,
 }
