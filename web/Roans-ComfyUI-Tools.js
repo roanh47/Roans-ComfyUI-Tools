@@ -87,10 +87,11 @@ function injectStyles() {
 
 /* -------------------------------------------------------------------- state */
 
-const S = { models: [], workflows: [], prompts: [], loadedAt: 0 };
+const S = { models: [], workflows: [], prompts: [], wfFolders: [], wfFolderMeta: {}, modelFolderMeta: {}, loadedAt: 0 };
 const V = {
-  model: { q: "", type: "All", sort: "name", group: "type", open: new Set(), collapsed: new Set() },
+  model: { q: "", type: "All", sort: "name", desc: false, group: "type", open: new Set(), collapsed: new Set() },
   prompt: { q: "", kind: "all", group: "none", open: new Set(), collapsed: new Set() },
+  wf: { q: "", sort: "recent", desc: true, collapsed: new Set(), editing: null, moving: null, newFolder: false },
 };
 
 let uiStamp = null;
@@ -150,6 +151,9 @@ async function load(force) {
   S.models = data.models;
   S.workflows = data.workflows;
   S.prompts = data.prompts;
+  S.wfFolders = data.wf_folders || [];
+  S.wfFolderMeta = data.wf_folder_meta || {};
+  S.modelFolderMeta = data.model_folder_meta || {};
   S.loadedAt = Date.now();
   return data;
 }
@@ -161,7 +165,7 @@ function copy(text, what) {
   toast("copied " + what);
 }
 function openWorkflow(file) {
-  api(`/workflow?file=${encodeURIComponent(file)}`)
+  api(`/workflow?rel=${encodeURIComponent(file)}`)
     .then((graph) => {
       app.loadGraphData(graph);
       toast("opened " + file);
@@ -525,8 +529,8 @@ function promptEditor(host, preset, onDone) {
   none.value = "";
   wf.appendChild(none);
   for (const w of S.workflows) {
-    const o = el("option", null, w.name);
-    o.value = w.file;
+    const o = el("option", null, w.display_name || w.name);
+    o.value = w.rel || w.file;
     wf.appendChild(o);
   }
   wf.value = preset.workflow || "";
@@ -836,82 +840,291 @@ function decorateNativeTabs() {
   }
 }
 
-/* ------------- ComfyUI's own Workflows panel: search inside workflows -------- */
+/* ------- ComfyUI's own Workflows panel: folders, subfolders, sort, pins ------ */
 
-// ComfyUI's workflow search only matches filenames. We already parse every
-// workflow's checkpoint, loras, prompts and sampler settings server-side, so this
-// injects a content-search bar into the native panel and lists what matches.
+// ComfyUI's workflow list is flat and searched by filename. This injects a real
+// browser into the native panel: nested folders, sorting (name / custom / recent,
+// either direction), pins, rename and move — all backed by our API.
 const WF_PANEL = ".comfyui-workflows-panel, .comfyui-workflows-browse";
+const ROOT_KEY = "";
 
-function wfMatches(query) {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
-  const terms = needle.split(/\s+/).filter(Boolean);
-  return S.workflows.filter((w) => {
-    const hay = [
-      w.name,
-      w.file,
-      w.checkpoint,
-      w.positive,
-      w.negative,
-      (w.loras || []).map((l) => l.name).join(" "),
-      w.sampler?.sampler,
-      w.sampler?.scheduler,
-      w.size,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return terms.every((t) => hay.includes(t)); // every word must hit — "h0rs3 mud"
+function wfHaystack(w) {
+  return [
+    w.display_name,
+    w.name,
+    w.rel,
+    w.checkpoint,
+    w.positive,
+    w.negative,
+    (w.loras || []).map((l) => l.name).join(" "),
+    w.sampler?.sampler,
+    w.sampler?.scheduler,
+    w.size,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function wfMatches(w) {
+  const terms = V.wf.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = wfHaystack(w);
+  return terms.every((t) => hay.includes(t));
+}
+
+function wfSorted(items) {
+  const { sort, desc } = V.wf;
+  const key = {
+    name: (w) => (w.display_name || w.name).toLowerCase(),
+    custom: (w) => (w.order == null ? Number.MAX_SAFE_INTEGER : w.order),
+    recent: (w) => w.modified,
+  }[sort] || ((w) => w.modified);
+  const sorted = items.slice().sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+    return desc ? -cmp : cmp;
   });
+  // pins win over any sort order
+  return sorted.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+}
+
+function wfFolderMetaOf(folder) {
+  return (S.wfFolderMeta || {})[folder] || {};
+}
+function wfFolderSort(a, b) {
+  const ma = wfFolderMetaOf(a);
+  const mb = wfFolderMetaOf(b);
+  if (!!mb.pinned !== !!ma.pinned) return mb.pinned ? 1 : -1;
+  const oa = ma.order == null ? Number.MAX_SAFE_INTEGER : ma.order;
+  const ob = mb.order == null ? Number.MAX_SAFE_INTEGER : mb.order;
+  if (oa !== ob) return oa - ob;
+  return a.localeCompare(b);
 }
 
 function buildWorkflowBar() {
   const bar = el("div", "rt-wf-bar");
-  bar.style.cssText = "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
+  bar.style.cssText =
+    "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
 
   const head = el("div", "rt-head");
-  head.appendChild(el("span", "rt-sec", "search inside workflows"));
+  head.appendChild(el("span", "rt-sec", "workflows"));
+  head.appendChild(el("span", "rt-spacer"));
+  const newFolder = btn("+ folder", "icon", async () => {
+    V.wf.newFolder = !V.wf.newFolder;
+    paint();
+  });
+  newFolder.title = "make a folder (nesting with / allowed)";
+  head.appendChild(newFolder);
   bar.appendChild(head);
 
-  const search = input(null, "", "checkpoint, lora, prompt words…");
-  const results = el("div", "rt-scroll");
-  results.style.cssText = "max-height:46vh;";
-
-  const paint = () => {
-    results.innerHTML = "";
-    if (!search.value.trim()) {
-      results.style.display = "none";
-      return;
-    }
-    const found = wfMatches(search.value);
-    results.style.display = "flex";
-    if (!found.length) {
-      results.appendChild(el("div", "rt-empty", "no workflow matches"));
-      return;
-    }
-    for (const w of found) {
-      const card = el("div", "rt-card");
-      card.style.cursor = "pointer";
-      card.title = "open " + w.file;
-      const row = el("div", "rt-head");
-      row.appendChild(el("span", "rt-title", w.name));
-      if (w.checkpoint) row.appendChild(badge(w.checkpoint.replace(/\.safetensors$/, "")));
-      for (const l of w.loras || []) row.appendChild(badge(l.name.replace(/\.safetensors$/, "")));
-      card.appendChild(row);
-      if (w.positive) card.appendChild(el("div", "rt-code", w.positive.slice(0, 200)));
-      const sk = w.sampler || {};
-      card.appendChild(
-        el("div", "rt-dim", [w.size, sk.steps ? `${sk.steps} steps` : "", sk.cfg ? `cfg ${sk.cfg}` : "", sk.sampler].filter(Boolean).join(" · "))
-      );
-      card.onclick = () => openWorkflow(w.file);
-      results.appendChild(card);
-    }
+  const toolbar = el("div", "rt-head");
+  const search = input("rt-grow", V.wf.q, "search checkpoint, lora, prompt…");
+  search.oninput = () => {
+    V.wf.q = search.value;
+    paint();
   };
-  search.oninput = paint;
-  paint();
+  const sort = select(
+    [
+      ["recent", "recent"],
+      ["name", "name"],
+      ["custom", "custom"],
+    ],
+    V.wf.sort,
+    (v) => {
+      V.wf.sort = v;
+      paint();
+    }
+  );
+  const dir = btn(V.wf.desc ? "↓ desc" : "↑ asc", "icon", () => {
+    V.wf.desc = !V.wf.desc;
+    paint();
+  });
+  dir.title = "flip the sort direction";
+  toolbar.append(search, sort, dir);
+  bar.appendChild(toolbar);
 
-  bar.append(search, results);
+  if (V.wf.newFolder) {
+    const row = el("div", "rt-head");
+    const name = input("rt-grow", "", "folder name, sub/folder allowed");
+    const go = btn("create", "pri", async () => {
+      if (!name.value.trim()) return;
+      await api("/wf_mkdir", { folder: name.value });
+      await load(true);
+      V.wf.newFolder = false;
+      toast("folder created");
+      paint();
+    });
+    const cancel = btn("cancel", null, () => {
+      V.wf.newFolder = false;
+      paint();
+    });
+    row.append(name, go, cancel);
+    bar.appendChild(row);
+  }
+
+  const tree = el("div", "rt-scroll");
+  tree.style.cssText = "max-height:50vh;padding-top:4px;";
+  bar.appendChild(tree);
+
+  function workflowRow(w, depth) {
+    const card = el("div", "rt-card");
+    card.style.cssText = `padding:6px 8px;margin-left:${depth * 10}px;`;
+
+    const row = el("div", "rt-head");
+    const star = btn(w.pinned ? "★" : "☆", "icon", async () => {
+      await api("/wf_meta", { rel: w.rel, pinned: !w.pinned });
+      await load();
+      paint();
+    });
+    star.title = w.pinned ? "unpin" : "pin to the top";
+    row.appendChild(star);
+
+    const title = el("span", "rt-title", w.display_name || w.name);
+    title.style.cursor = "pointer";
+    title.title = "open " + w.rel;
+    title.onclick = () => openWorkflow(w.rel);
+    row.appendChild(title);
+
+    if (w.checkpoint) row.appendChild(badge(w.checkpoint.replace(/\.safetensors$/, "")));
+    for (const l of w.loras || []) row.appendChild(badge(l.name.replace(/\.safetensors$/, "")));
+    row.appendChild(el("span", "rt-spacer"));
+
+    row.appendChild(btn("open", "icon", () => openWorkflow(w.rel)));
+    row.appendChild(
+      btn("✎", "icon", () => {
+        V.wf.editing = V.wf.editing === w.rel ? null : w.rel;
+        V.wf.moving = null;
+        paint();
+      })
+    );
+    row.appendChild(
+      btn("⇢", "icon", () => {
+        V.wf.moving = V.wf.moving === w.rel ? null : w.rel;
+        V.wf.editing = null;
+        paint();
+      })
+    );
+    card.appendChild(row);
+
+    if (V.wf.editing === w.rel) {
+      const edit = el("div", "rt-head");
+      const name = input("rt-grow", w.display_name || w.name, "display name");
+      edit.append(
+        name,
+        btn("save", "pri", async () => {
+          await api("/wf_meta", { rel: w.rel, name: name.value.trim() });
+          await load();
+          V.wf.editing = null;
+          toast("renamed in the list (the file keeps its name)");
+          paint();
+        }),
+        btn("cancel", null, () => {
+          V.wf.editing = null;
+          paint();
+        })
+      );
+      card.appendChild(edit);
+    }
+
+    if (V.wf.moving === w.rel) {
+      const move = el("div", "rt-head");
+      const target = select(
+        [[ROOT_KEY, "(root)"], ...(S.wfFolders || []).map((f) => [f, f])],
+        w.folder || ROOT_KEY,
+        () => {}
+      );
+      move.append(
+        target,
+        btn("move", "pri", async () => {
+          try {
+            await api("/wf_move", { rel: w.rel, folder: target.value });
+            await load(true);
+            V.wf.moving = null;
+            toast("moved");
+          } catch (e) {
+            toast("move failed: " + e, "error");
+          }
+          paint();
+        }),
+        btn("cancel", null, () => {
+          V.wf.moving = null;
+          paint();
+        })
+      );
+      card.appendChild(move);
+    }
+    return card;
+  }
+
+  function folderBlock(folder, kids, byFolder, depth) {
+    const meta = wfFolderMetaOf(folder);
+    const items = wfSorted((byFolder.get(folder) || []).filter(wfMatches));
+    const childFolders = (kids.get(folder) || []).slice().sort(wfFolderSort);
+    const label = folder === ROOT_KEY ? "all workflows" : folder.split("/").pop();
+    const collapsed = V.wf.collapsed.has(folder) || meta.collapsed;
+
+    const headRow = el("div", "rt-head");
+    headRow.style.cssText = `margin-left:${depth * 10}px;opacity:.95;`;
+    const caret = btn(collapsed ? "▸" : "▾", "icon", async () => {
+      if (V.wf.collapsed.has(folder)) V.wf.collapsed.delete(folder);
+      else V.wf.collapsed.add(folder);
+      await api("/wf_folder", { folder, collapsed: V.wf.collapsed.has(folder) });
+      paint();
+    });
+    headRow.appendChild(caret);
+    const pin = btn(meta.pinned ? "★" : "☆", "icon", async () => {
+      await api("/wf_folder", { folder, pinned: !meta.pinned });
+      await load();
+      paint();
+    });
+    pin.title = "pin this folder to the top";
+    headRow.appendChild(pin);
+    headRow.appendChild(el("span", "rt-title", label));
+    headRow.appendChild(el("span", "rt-dim", String(items.length + childFolders.length)));
+    headRow.appendChild(el("span", "rt-spacer"));
+    if (V.wf.sort === "custom") {
+      const bump = (delta) => async () => {
+        const order = (meta.order == null ? 0 : meta.order) + delta;
+        await api("/wf_folder", { folder, order });
+        await load();
+        paint();
+      };
+      headRow.appendChild(btn("↑", "icon", bump(-1)));
+      headRow.appendChild(btn("↓", "icon", bump(1)));
+    }
+    tree.appendChild(headRow);
+
+    if (collapsed) return;
+    for (const child of childFolders) folderBlock(child, kids, byFolder, depth + 1);
+    for (const w of items) tree.appendChild(workflowRow(w, depth + 1));
+  }
+
+  function paint() {
+    tree.innerHTML = "";
+    const byFolder = new Map();
+    for (const w of S.workflows) {
+      const f = w.folder || ROOT_KEY;
+      if (!byFolder.has(f)) byFolder.set(f, []);
+      byFolder.get(f).push(w);
+    }
+    const folders = new Set([ROOT_KEY]);
+    for (const f of S.wfFolders || []) folders.add(f);
+    for (const f of byFolder.keys()) folders.add(f);
+    const kids = new Map();
+    for (const f of folders) {
+      if (f === ROOT_KEY) continue;
+      const parent = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : ROOT_KEY;
+      if (!kids.has(parent)) kids.set(parent, []);
+      kids.get(parent).push(f);
+    }
+    folderBlock(ROOT_KEY, kids, byFolder, 0);
+    const shown = S.workflows.filter(wfMatches).length;
+    tree.appendChild(el("div", "rt-dim", `${shown} of ${S.workflows.length} workflows`));
+  }
+
+  paint();
   return bar;
 }
 
@@ -919,7 +1132,7 @@ function enhanceNativeWorkflows() {
   const panel = document.querySelector(WF_PANEL);
   if (!panel || panel.querySelector(".rt-wf-bar")) return;
   panel.prepend(buildWorkflowBar());
-  console.log("[Roans-ComfyUI-Tools] content search added inside ComfyUI's Workflows panel");
+  console.log("[Roans-ComfyUI-Tools] workflow browser injected into ComfyUI's Workflows panel");
 }
 
 /**

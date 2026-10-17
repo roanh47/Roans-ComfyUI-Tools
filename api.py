@@ -15,8 +15,13 @@ from . import library
 PREFIX = "/Roans-ComfyUI-Tools/api/"
 
 
-def _body(request):
-    return request.get_json(silent=True) or {}
+async def _body(request):
+    """JSON body of a request, or {} when there is none."""
+    try:
+        data = await request.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 def _js_path():
@@ -59,7 +64,7 @@ async def get_dump(request):
 
 
 async def post_model(request):
-    data = _body(request)
+    data = await _body(request)
     name = data.get("filename") or data.get("file")
     if not name:
         return web.json_response({"error": "filename is required"}, status=400)
@@ -75,7 +80,7 @@ async def post_model(request):
 
 
 async def post_prompt(request):
-    data = _body(request)
+    data = await _body(request)
     positive = (data.get("positive") or "").strip()
     if not positive:
         return web.json_response({"error": "positive prompt is required"}, status=400)
@@ -101,7 +106,7 @@ async def post_prompt(request):
 
 
 async def post_prompt_delete(request):
-    pid = _body(request).get("id")
+    pid = (await _body(request)).get("id")
     store = library.load_store()
     before = len(store["prompts"])
     store["prompts"] = [p for p in store["prompts"] if p.get("id") != pid]
@@ -126,7 +131,7 @@ async def get_workflow(request):
 
 async def post_wf_meta(request):
     """Display name / pin / custom order for one workflow."""
-    data = _body(request)
+    data = await _body(request)
     rel = data.get("rel")
     if not rel:
         return web.json_response({"error": "rel is required"}, status=400)
@@ -141,7 +146,7 @@ async def post_wf_meta(request):
 
 async def post_wf_folder(request):
     """Order / pin / collapsed state for a workflow folder."""
-    data = _body(request)
+    data = await _body(request)
     folder = (data.get("folder") or "").strip().strip("/")
     store = library.load_store()
     if folder == "":
@@ -157,7 +162,7 @@ async def post_wf_folder(request):
 
 async def post_wf_mkdir(request):
     """Create a real folder (nested paths allowed) in the workflows directory."""
-    folder = _body(request).get("folder") or ""
+    folder = (await _body(request)).get("folder") or ""
     try:
         made = library.wf_mkdir(folder)
     except (ValueError, OSError) as exc:
@@ -167,7 +172,7 @@ async def post_wf_mkdir(request):
 
 async def post_wf_move(request):
     """Move a workflow file into a folder (this renames it on disk)."""
-    data = _body(request)
+    data = await _body(request)
     rel = data.get("rel")
     if not rel:
         return web.json_response({"error": "rel is required"}, status=400)
@@ -182,7 +187,7 @@ async def post_wf_move(request):
 
 async def post_model_folder(request):
     """Order / pin for a model folder (checkpoints, loras, …)."""
-    data = _body(request)
+    data = await _body(request)
     folder = (data.get("folder") or "").strip()
     if not folder:
         return web.json_response({"error": "folder is required"}, status=400)
