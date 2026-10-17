@@ -168,6 +168,7 @@ const V = {
 
 let uiStamp = null;
 let RT_FOLDER_INPUT = null;
+let RT_MD_PAINT = null;
 
 // An interaction log: every pointer/context event on our own panels, plus what
 // the menu looked like 60ms later. This is how a right-click that never reaches
@@ -1312,8 +1313,7 @@ function reportDiag() {
     const first = S.models && S.models[0];
     if (first) {
       V.model.open.add(first.filename);
-      RT_STATS.mdDetailRepaint = 1;
-      paint();
+      if (RT_MD_PAINT) RT_MD_PAINT();
       RT_STATS.mdDetailProbe = {
         labels: [...document.querySelectorAll(".rt-md-bar .rt-detail .rt-k")].map((n) => n.textContent),
         inputs: [...document.querySelectorAll(".rt-md-bar .rt-detail input")].map((i) => i.placeholder || "(no placeholder)"),
@@ -2267,6 +2267,7 @@ function buildModelsBar() {
     body.appendChild(el("div", "rt-dim", `${shown} of ${S.models.length} models`));
   }
 
+  RT_MD_PAINT = paint;
   paint();
   return bar;
 }
