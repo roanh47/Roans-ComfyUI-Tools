@@ -221,6 +221,18 @@ async def get_diag(request):
     return web.json_response(_DIAG or {"note": "the page has not reported yet"})
 
 
+async def post_relink(request):
+    """Look up the downloaded files nobody has described yet: page link, base
+    model, version and trigger words, from the file hash."""
+    data = await _body(request)
+    try:
+        limit = int(data.get("limit") or 8)
+    except (TypeError, ValueError):
+        limit = 8
+    result = library.relink_models(limit=limit, only=data.get("filename"))
+    return web.json_response({"ok": True, **result})
+
+
 async def post_model_meta(request):
     """Per-model overrides: display name, pin, why/note/keyword/link/rank."""
     data = await _body(request)
@@ -286,6 +298,7 @@ ROUTES = {
     ("POST", "wf_mkdir"): post_wf_mkdir,
     ("POST", "wf_move"): post_wf_move,
     ("POST", "model_meta"): post_model_meta,
+    ("POST", "relink"): post_relink,
     ("POST", "diag"): post_diag,
     ("POST", "err"): post_err,
     ("GET", "err"): get_err,

@@ -6,7 +6,9 @@ model, lora rank, training tags) are detected; the rest live in data/library.jso
 Stdlib only.
 """
 
+import hashlib
 import json
+import urllib.request
 import os
 import re
 import time
@@ -245,6 +247,8 @@ def load_store():
     data.setdefault("wf_meta", {})       # per workflow: display name, pin, custom order
     data.setdefault("wf_folders", {})    # per folder: order, pin, collapsed
     data.setdefault("model_folders", {})  # per model folder: order, pin
+    data.setdefault("hashes", {})        # filename -> {size, mtime, sha256}
+    data.setdefault("lookups", {})       # sha256 -> whatever the lookup returned
     for entry in data["models"].values():
         if "type" in entry and "model_type" not in entry:  # older key name
             entry["model_type"] = entry.pop("type")
@@ -257,6 +261,103 @@ def save_store(data):
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=1, ensure_ascii=False)
     os.replace(tmp, DATA_FILE)
+
+
+CIVITAI_BY_HASH = "https://civitai.com/api/v1/model-versions/by-hash/"
+LOOKUP_UA = "Roans-ComfyUI-Tools/1.0"
+
+
+def file_sha256(path):
+    """SHA256 of a model file, remembered per (name, size, mtime) so a rescan
+    never rehashes gigabytes."""
+    store = load_store()
+    name = os.path.basename(path)
+    try:
+        st = os.stat(path)
+    except OSError:
+        return ""
+    key = (name, st.st_size, int(st.st_mtime))
+    cached = store["hashes"].get(name)
+    if cached and (cached.get("size"), cached.get("mtime")) == key[1:]:
+        return cached.get("sha256", "")
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 22), b""):
+            h.update(chunk)
+    digest = h.hexdigest()
+    store["hashes"][name] = {"size": st.st_size, "mtime": int(st.st_mtime), "sha256": digest}
+    save_store(store)
+    return digest
+
+
+def civitai_by_hash(digest):
+    """Ask Civitai which model version this file is. None when it is unknown."""
+    if not digest:
+        return None
+    store = load_store()
+    if digest in store["lookups"]:
+        return store["lookups"][digest]
+    try:
+        req = urllib.request.Request(CIVITAI_BY_HASH + digest, headers={"User-Agent": LOOKUP_UA})
+        with urllib.request.urlopen(req, timeout=25) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+    store = load_store()
+    store["lookups"][digest] = data
+    save_store(store)
+    return data
+
+
+def relink_models(limit=None, only=None, mirror="civitai.red"):
+    """Fill in the model metadata nobody should have to type: page link, base
+    model, version and trigger words, taken from the file's own hash.
+
+    Only empty fields are written — anything you typed yourself stays."""
+    store = load_store()
+    linked, failed, skipped = [], [], []
+    targets = scan_models()
+    if only:
+        targets = [m for m in targets if m["filename"] == only]
+    for m in targets:
+        if not only and m.get("link"):
+            continue
+        if limit is not None and len(linked) + len(failed) >= limit:
+            break
+        path = m.get("path") or ""
+        if not path or not os.path.isfile(path):
+            skipped.append(m["filename"])
+            continue
+        digest = file_sha256(path)
+        data = civitai_by_hash(digest)
+        if not data:
+            failed.append(m["filename"])
+            continue
+        entry = store["models"].setdefault(m["filename"], {})
+        model_id = data.get("modelId")
+        version_id = data.get("id")
+        if model_id and version_id and not entry.get("link"):
+            entry["link"] = f"https://{mirror}/models/{model_id}?modelVersionId={version_id}"
+        if data.get("baseModel") and not entry.get("base"):
+            entry["base"] = data["baseModel"]
+        if data.get("name") and not entry.get("version"):
+            # the labels read "v{version}", so strip the v Civitai sends back
+            entry["version"] = str(data["name"]).lstrip("vV")
+
+        words = [w for w in (data.get("trainedWords") or []) if w]
+        if words and not entry.get("keyword"):
+            entry["keyword"] = ", ".join(words[:8])
+        if not entry.get("auto_linked"):
+            entry["auto_linked"] = int(time.time())
+        linked.append({
+            "file": m["filename"],
+            "link": entry.get("link", ""),
+            "base": entry.get("base", ""),
+            "version": entry.get("version", ""),
+            "keyword": entry.get("keyword", ""),
+        })
+    save_store(store)
+    return {"linked": linked, "unknown": failed, "skipped": skipped}
 
 
 def scan_models(force=False):
@@ -308,6 +409,7 @@ def scan_models(force=False):
                             "auto_tags": meta.get("auto_tags", []),
                             "size": st.st_size,
                             "modified": int(st.st_mtime),
+                            "path": full,
                         }
                     )
     order = list(TYPE_LABELS.values())

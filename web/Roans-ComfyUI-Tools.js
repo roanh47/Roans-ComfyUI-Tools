@@ -1690,8 +1690,22 @@ function buildModelsBar() {
   const head = el("div", "rt-head");
   head.appendChild(el("span", "rt-sec", "models"));
   head.appendChild(el("span", "rt-spacer"));
-  const groups = new Set(S.models.map((m) => m.folder));
-  head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${groups.size} folders`));
+  const missing = S.models.filter((m) => !m.link).length;
+  head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));
+  const relink = btn("links ophalen", null, async () => {
+    relink.disabled = true;
+    relink.textContent = "bezig…";
+    try {
+      const r = await api("/relink", { limit: 12 });
+      await load(true);
+      toast(`${r.linked.length} links gevonden, ${r.unknown.length} onbekend (lokale merges)`);
+    } catch (e) {
+      toast("lookup failed: " + e, "error");
+    }
+    paint();
+  });
+  relink.title = "read the hash of every file that has no link yet and ask Civitai which model it is";
+  head.appendChild(relink);
   bar.appendChild(head);
 
   const toolbar = el("div", "rt-head");
