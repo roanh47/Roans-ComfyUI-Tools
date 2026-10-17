@@ -1033,7 +1033,7 @@ app.registerExtension({
 
     // Prompts is the only NEW tab. Models is ComfyUI's own panel, enhanced in place
     // by enhanceNativeModelLibrary() rather than replaced with a second button.
-    const mode = registerTab(
+    registerTab(
       {
         id: "roansPrompts",
         icon: "pi pi-comment",
