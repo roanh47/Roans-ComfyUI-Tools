@@ -1098,6 +1098,17 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  const mdRow = document.querySelector(".rt-md-bar .rt-card");
+  const mdRowTitle = mdRow && mdRow.querySelector(".rt-title");
+  const mdRowInfo = mdRow
+    ? {
+        text: (mdRow.innerText || "").replace(/\s+/g, " ").slice(0, 90),
+        titleText: mdRowTitle ? mdRowTitle.textContent : "(no .rt-title element)",
+        titleWidth: mdRowTitle ? Math.round(mdRowTitle.getBoundingClientRect().width) : 0,
+        rowWidth: Math.round(mdRow.getBoundingClientRect().width),
+        badges: [...mdRow.querySelectorAll(".rt-badge")].map((b) => b.textContent),
+      }
+    : "(no model row found)";
   const styleTag = document.getElementById("rt-styles");
   const card = document.querySelector(".rt-card");
   const styles = {
@@ -1114,6 +1125,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    mdRow: mdRowInfo,
     controlSizes: ctl,
     href: location.href,
     width: innerWidth,
@@ -1658,12 +1670,11 @@ function buildModelsBar() {
       byFolder.get(m.folder).push(m);
     }
     const folders = [...byFolder.keys()].sort((a, b) => {
-      const ma = modelFolderMetaOf(a);
-      const mb = modelFolderMetaOf(b);
-      if (!!mb.pinned !== !!ma.pinned) return mb.pinned ? 1 : -1;
-      const oa = ma.order == null ? Number.MAX_SAFE_INTEGER : ma.order;
-      const ob = mb.order == null ? Number.MAX_SAFE_INTEGER : mb.order;
-      if (oa !== ob) return oa - ob;
+      const oa = modelFolderMetaOf(a).order;
+      const ob = modelFolderMetaOf(b).order;
+      const na = oa == null ? Number.MAX_SAFE_INTEGER : oa;
+      const nb = ob == null ? Number.MAX_SAFE_INTEGER : ob;
+      if (na !== nb) return na - nb;
       return a.localeCompare(b);
     });
 
@@ -1680,13 +1691,6 @@ function buildModelsBar() {
           paint();
         })
       );
-      const pin = btn(meta.pinned ? "★" : "☆", "icon", async () => {
-        await api("/model_folder", { folder, pinned: !meta.pinned });
-        await load();
-        paint();
-      });
-      pin.title = "pin this folder to the top";
-      fh.appendChild(pin);
       fh.appendChild(el("span", "rt-name", folder));
       fh.appendChild(el("span", "rt-spacer"));
       fh.appendChild(el("span", "rt-count", String(items.length)));
