@@ -1512,6 +1512,68 @@ function contextMenu(ev, items) {
   menu.style.top = `${Math.min(ev.clientY, window.innerHeight - r.height - 8)}px`;
 }
 
+// Rows only carry data attributes; the menu itself is built here from that data.
+// The listener sits on window in the CAPTURE phase so it runs before anything
+// ComfyUI has wired up higher in the tree, which otherwise swallows the event.
+function menuFor(kind, key) {
+  if (kind === "wf") {
+    const w = S.workflows.find((x) => x.rel === key);
+    if (!w) return null;
+    return [
+      { label: "Open", action: () => openWorkflow(w.rel) },
+      { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; paint(); } },
+      { separator: true },
+      { header: "add to folder" },
+      { label: "→ root", action: () => moveWorkflowTo(w.rel, "") },
+      ...folderList().map((f) => ({ label: `→ ${f}`, action: () => moveWorkflowTo(w.rel, f) })),
+      { separator: true },
+      { label: "Move to .trash", danger: true, action: () => trashWorkflow(w) },
+    ];
+  }
+  if (kind === "folder") {
+    const folder = key;
+    const meta = wfFolderMetaOf(folder);
+    return [
+      { label: "New subfolder…", action: () => openFolderInput(folder) },
+      { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; paint(); } },
+      { label: meta.pinned ? "Unpin folder" : "Pin folder to top", action: async () => {
+          await api("/wf_folder", { folder, pinned: !meta.pinned });
+          await load();
+          paint();
+        } },
+      { separator: true },
+      { label: "Delete folder (.trash)", danger: true, action: async () => {
+          try {
+            await api("/wf_rmdir", { folder });
+            await load(true);
+            toast("folder moved to .trash");
+          } catch (e) {
+            toast(String(e.message || e), "error");
+          }
+          paint();
+        } },
+    ];
+  }
+  return null;
+}
+
+if (!window.__rtMenuHooked) {
+  window.__rtMenuHooked = true;
+  window.addEventListener(
+    "contextmenu",
+    (ev) => {
+      const row = ev.target && ev.target.closest && ev.target.closest("[data-rt-kind]");
+      if (!row) return;
+      const items = menuFor(row.dataset.rtKind, row.dataset.rtKey);
+      if (!items) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      contextMenu(ev, items);
+    },
+    true
+  );
+}
+
 function folderList() {
   return (S.wfFolders || []).slice().sort();
 }
@@ -1681,18 +1743,9 @@ function buildWorkflowBar() {
     row.appendChild(el("span", "rt-spacer"));
     card.appendChild(row);
 
-    // right click is the whole menu now: rename, move, remove
-    card.oncontextmenu = (ev) =>
-      contextMenu(ev, [
-        { label: "Open", action: () => openWorkflow(w.rel) },
-        { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; paint(); } },
-        { separator: true },
-        { header: "add to folder" },
-        { label: "→ root", action: () => moveWorkflowTo(w.rel, "") },
-        ...folderList().map((f) => ({ label: `→ ${f}`, action: () => moveWorkflowTo(w.rel, f) })),
-        { separator: true },
-        { label: "Move to .trash", danger: true, action: () => trashWorkflow(w) },
-      ]);
+    // who this row is — the menu is built by the global contextmenu listener
+    card.dataset.rtKind = "wf";
+    card.dataset.rtKey = w.rel;
 
     // drag a workflow onto another one to reorder, onto a folder to file it
     card.draggable = true;
@@ -1812,27 +1865,8 @@ function buildWorkflowBar() {
     headRow.appendChild(el("span", "rt-spacer"));
     headRow.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
 
-    headRow.oncontextmenu = (ev) =>
-      contextMenu(ev, [
-        { label: "New subfolder…", action: () => openFolderInput(folder) },
-        { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; paint(); } },
-        { label: meta.pinned ? "Unpin folder" : "Pin folder to top", action: async () => {
-            await api("/wf_folder", { folder, pinned: !meta.pinned });
-            await load();
-            paint();
-          } },
-        { separator: true },
-        { label: "Delete folder (.trash)", danger: true, action: async () => {
-            try {
-              await api("/wf_rmdir", { folder });
-              await load(true);
-              toast("folder moved to .trash");
-            } catch (e) {
-              toast(String(e.message || e), "error");
-            }
-            paint();
-          } },
-      ]);
+    headRow.dataset.rtKind = "folder";
+    headRow.dataset.rtKey = folder;
 
     // dropping a workflow on a folder files it there
     headRow.ondragover = (ev) => {
