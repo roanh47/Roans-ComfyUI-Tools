@@ -2159,13 +2159,16 @@ function buildModelsBar() {
       const pairs = [
         ["why", m.why || ""],
         ["keyword", m.keyword || ""],
+        ["rank", m.rank || ""],
         ["note", m.note || ""],
+        ["link", m.link || ""],
       ];
       const fields = {};
+      const hints = { link: "https://…", rank: "1 = best" };
       for (const [key, val] of pairs) {
         const f = el("div", "rt-head");
-        f.appendChild(el("span", "rt-dim", key));
-        fields[key] = input("rt-grow", val);
+        f.appendChild(el("span", "rt-k", key));
+        fields[key] = input("rt-grow", val, hints[key] || "");
         f.appendChild(fields[key]);
         detail.appendChild(f);
       }
@@ -2173,7 +2176,6 @@ function buildModelsBar() {
       info.textContent = [
         m.base && `base ${m.base}`,
         m.version && `v${m.version}`,
-        m.rank && `rank ${m.rank}`,
         m.lora_dim && `${m.lora_dim} dim`,
         (m.auto_tags || []).slice(0, 6).join(", "),
       ]
@@ -2187,7 +2189,9 @@ function buildModelsBar() {
             filename: m.filename,
             why: fields.why.value,
             keyword: fields.keyword.value,
+            rank: fields.rank.value,
             note: fields.note.value,
+            link: fields.link.value,
           });
           await load();
           toast("saved");
