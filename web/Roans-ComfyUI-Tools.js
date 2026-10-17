@@ -962,6 +962,21 @@ function showNativeSiblings() {
   _rtHidden = [];
 }
 
+// A percentage height has nothing definite to resolve against inside ComfyUI's
+// scroll panel, so the bar either leaves a gap or grows to its full content.
+// Measure the viewport once and pin the bar to it; the list scrolls inside.
+function fitBarToViewport(bar) {
+  const view =
+    document.querySelector(".comfy-vue-side-bar-body") ||
+    document.querySelector(".comfy-vue-side-bar-container") ||
+    bar.closest(".p-scrollpanel");
+  const h = view && view.clientHeight;
+  if (h) bar.style.height = `${h}px`;
+}
+window.addEventListener("resize", () => {
+  document.querySelectorAll(".rt-wf-bar, .rt-md-bar").forEach(fitBarToViewport);
+});
+
 function guardInjection(tabId, barSelector, findHost, build, label, options = {}) {
   const active = tabIsActive(tabId);
   let bar = document.querySelector(barSelector);
@@ -987,6 +1002,7 @@ function guardInjection(tabId, barSelector, findHost, build, label, options = {}
     console.log(`[Roans-ComfyUI-Tools] ${label} browser mounted`);
   }
   if (options.takeover) hideNativeSiblings(host, bar);
+  fitBarToViewport(bar);
 }
 
 function reportDiag() {
@@ -1054,6 +1070,7 @@ function reportDiag() {
     barH: anyBar ? Math.round(anyBar.getBoundingClientRect().height) : 0,
     hostH: panelHost ? Math.round(panelHost.getBoundingClientRect().height) : 0,
     outerH: panelHost && panelHost.parentElement ? Math.round(panelHost.parentElement.getBoundingClientRect().height) : 0,
+    viewH: (document.querySelector(".comfy-vue-side-bar-body") || {}).clientHeight || 0,
   };
   const styleTag = document.getElementById("rt-styles");
   const card = document.querySelector(".rt-card");
