@@ -46,7 +46,7 @@ const CSS = `
 .rt-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px;
           cursor:pointer; white-space:nowrap; transition:background .12s,color .12s; }
 .rt-btn:hover { background:var(--rt-surface-hover); }
-.rt-btn.icon { width:var(--rt-ctl); padding:0; color:var(--rt-muted); }
+.rt-btn.icon { width:var(--rt-ctl); min-width:var(--rt-ctl); flex:0 0 auto; padding:0; color:var(--rt-muted); }
 .rt-btn.icon:hover { color:var(--fg-color,#fff); }
 .rt-btn.icon.on { color:var(--rt-accent); background:var(--rt-surface-hover); }
 .rt-btn.pri { background:var(--rt-accent); color:#0b0b0b; font-weight:500; }
