@@ -1042,7 +1042,23 @@ function reportDiag() {
     const p = b && b.parentElement;
     return p ? [...p.children].map((k) => ({ tag: k.tagName.toLowerCase(), cls: (k.className || "").toString().slice(0, 40), display: k.style.display, visible: !!k.getClientRects().length })) : [];
   })();
-  return { dpr: devicePixelRatio, href: location.href, width: innerWidth, panels, bars, tabs, bodyKids, hiddenNow, barParentKids };
+  return {
+    dpr: devicePixelRatio,
+    href: location.href,
+    width: innerWidth,
+    ready: document.readyState,
+    bodyKidsN: document.body ? document.body.children.length : -1,
+    bodyHead: document.body ? document.body.innerHTML.slice(0, 200) : "",
+    hasCanvas: !!document.querySelector("#graph-canvas, canvas"),
+    tabCount: document.querySelectorAll("[data-testid$='-tab-button']").length,
+    panels,
+    bars,
+    tabs,
+    bodyKids,
+    hiddenNow,
+    barParentKids,
+    at: new Date().toISOString(),
+  };
 }
 
 async function sendDiag() {
@@ -1679,6 +1695,17 @@ function registerTab(base, painter, Vue) {
  * which tab is active and mount our own panel beside the strip while ours is
  * selected, then remove it from view when another tab is picked.
  */
+// Report on a timer as well: if the page stalls, mutation reports go silent and
+// I would be looking at a stale snapshot forever.
+setInterval(() => {
+  try {
+    sendDiag();
+  } catch (e) {
+    /* best effort */
+  }
+}, 5000);
+window.addEventListener("load", () => setTimeout(sendDiag, 1500));
+
 app.registerExtension({
   name: "roans.comfyui.tools",
   async setup() {
