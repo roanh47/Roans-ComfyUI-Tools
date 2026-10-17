@@ -58,7 +58,8 @@ const CSS = `
       font:inherit; font-size:11.5px; color:inherit; opacity:.5; cursor:pointer;
       background:transparent; border:1px dashed var(--rt-line); border-radius:6px; }
 .rt-add:hover { opacity:.9; border-color:var(--p-primary-color,#7aa2f7); color:var(--p-primary-color,#7aa2f7); }
-.rt-newfolder { display:flex; gap:6px; align-items:center; padding:2px 0 2px 14px; }
+.rt-newfolder { display:flex; gap:6px; align-items:center; padding:0; }
+.rt-folderslot:not(:empty) { margin-top:1px; }
 
 /* cards */
 .rt-card { border:1px solid var(--rt-line); border-radius:8px; padding:7px 8px;
@@ -1098,6 +1099,8 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  const slot = document.querySelector(".rt-folderslot");
+  const folderUi = { open: !!slot && slot.childElementCount > 0, newFolder: String(V.wf.newFolder) };
   const integrity = {
     wfRows: document.querySelectorAll(".rt-wf-bar .rt-card").length,
     wfNamed: document.querySelectorAll(".rt-wf-bar .rt-card .rt-title").length,
@@ -1131,6 +1134,7 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    folderUi,
     integrity,
     mdRow: mdRowInfo,
     controlSizes: ctl,
@@ -1213,6 +1217,28 @@ function wfSorted(items) {
   return sorted.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 }
 
+function folderIcon(withPlus) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", "15");
+  svg.setAttribute("height", "15");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const body = document.createElementNS(NS, "path");
+  body.setAttribute("d", "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z");
+  svg.appendChild(body);
+  if (withPlus) {
+    const plus = document.createElementNS(NS, "path");
+    plus.setAttribute("d", "M12 13.5h5M14.5 11v5");
+    svg.appendChild(plus);
+  }
+  return svg;
+}
+
 function wfFolderMetaOf(folder) {
   return (S.wfFolderMeta || {})[folder] || {};
 }
@@ -1230,11 +1256,6 @@ function buildWorkflowBar() {
   const bar = el("div", "rt-wf-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:6px;padding:8px 9px;border-bottom:1px solid var(--border-color,#3a3a3a);";
-
-  const head = el("div", "rt-head");
-  head.appendChild(el("span", "rt-sec", "workflows"));
-  head.appendChild(el("span", "rt-spacer"));
-  bar.appendChild(head);
 
   const toolbar = el("div", "rt-head");
   const search = input("rt-grow", V.wf.q, "search workflows…");
@@ -1259,12 +1280,51 @@ function buildWorkflowBar() {
     paint();
   });
   dir.title = V.wf.desc ? "descending — click for ascending" : "ascending — click for descending";
-  toolbar.append(search, sort, dir);
+  const newFolder = btn("", "icon", () => openFolderInput(""));
+  newFolder.appendChild(folderIcon(true));
+  newFolder.title = "new folder — / makes subfolders";
+  toolbar.append(search, sort, dir, newFolder);
   bar.appendChild(toolbar);
+
+  // The name field opens here, right under the button that opened it — not at
+  // the end of a long list where it cannot be seen.
+  const folderSlot = el("div", "rt-folderslot");
+  bar.appendChild(folderSlot);
 
   const tree = el("div", "rt-scroll");
   tree.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
   bar.appendChild(tree);
+
+  function openFolderInput(prefix) {
+    V.wf.newFolder = prefix || "";
+    folderSlot.innerHTML = "";
+    const row = el("div", "rt-newfolder");
+    const name = input("rt-grow", prefix ? prefix + "/" : "", "folder name");
+    const go = btn("create", "pri", async () => {
+      if (!name.value.trim()) return;
+      try {
+        await api("/wf_mkdir", { folder: name.value.trim() });
+        await load(true);
+        toast("folder created");
+      } catch (e) {
+        toast("could not create it: " + e, "error");
+      }
+      V.wf.newFolder = null;
+      folderSlot.innerHTML = "";
+      paint();
+    });
+    const cancel = btn("cancel", null, () => {
+      V.wf.newFolder = null;
+      folderSlot.innerHTML = "";
+    });
+    name.onkeydown = (ev) => {
+      if (ev.key === "Enter") go.click();
+      if (ev.key === "Escape") cancel.click();
+    };
+    row.append(name, go, cancel);
+    folderSlot.appendChild(row);
+    name.focus();
+  }
 
   function workflowRow(w, depth) {
     const card = el("div", "rt-card");
@@ -1373,12 +1433,7 @@ function buildWorkflowBar() {
     const collapsed = V.wf.collapsed.has(folder) || meta.collapsed;
 
     if (folder === ROOT_KEY) {
-      // The root is the lists' home: a heading, not something you fold away.
-      const root = el("div", "rt-root");
-      root.appendChild(el("span", "rt-name", "all workflows"));
-      root.appendChild(el("span", "rt-spacer"));
-      root.appendChild(el("span", "rt-count", String(items.length + childFolders.length)));
-      tree.appendChild(root);
+      // The root is where the list lives, not a folder: nothing to fold, no label.
       for (const child of childFolders) folderBlock(child, kids, byFolder, depth);
       for (const w of items) tree.appendChild(workflowRow(w, depth));
       return;
@@ -1400,10 +1455,8 @@ function buildWorkflowBar() {
     pin.title = "pin this folder to the top";
     headRow.appendChild(pin);
     headRow.appendChild(el("span", "rt-name", label));
-    const sub = btn("+", "icon", () => {
-      V.wf.newFolder = folder;
-      paint();
-    });
+    const sub = btn("", "icon", () => openFolderInput(folder));
+    sub.appendChild(folderIcon(true));
     sub.title = "new subfolder inside " + folder;
     headRow.appendChild(sub);
     headRow.appendChild(el("span", "rt-spacer"));
@@ -1447,36 +1500,6 @@ function buildWorkflowBar() {
 
     // Folder creation lives where the folders are, inline at the end of the list,
     // not in a header button that reads like "new tab".
-    if (V.wf.newFolder !== null) {
-      function newFolderRow() {
-        const row = el("div", "rt-newfolder");
-        const name = input("rt-grow", V.wf.newFolder ? V.wf.newFolder + "/" : "", "new folder name");
-        row.append(
-          name,
-          btn("create", "pri", async () => {
-            if (!name.value.trim()) return;
-            await api("/wf_mkdir", { folder: name.value });
-            await load(true);
-            V.wf.newFolder = null;
-            toast("folder created");
-            paint();
-          }),
-          btn("cancel", null, () => {
-            V.wf.newFolder = null;
-            paint();
-          })
-        );
-        return row;
-      }
-      tree.appendChild(newFolderRow());
-    } else {
-      const add = el("button", "rt-add", "+ new folder");
-      add.onclick = () => {
-        V.wf.newFolder = "";
-        paint();
-      };
-      tree.appendChild(add);
-    }
     const shown = S.workflows.filter(wfMatches).length;
     tree.appendChild(el("div", "rt-dim", `${shown} of ${S.workflows.length} workflows`));
   }
