@@ -1101,6 +1101,20 @@ function reportDiag() {
   const ctl = [...document.querySelectorAll(".rt-app .rt-btn, .rt-app .rt-input, .rt-app .rt-select")]
     .slice(0, 14)
     .map((e) => `${Math.round(e.getBoundingClientRect().height)}x${Math.round(e.getBoundingClientRect().width)}`);
+  const hit = (() => {
+    const b = document.querySelector(".rt-wf-bar .rt-btn.icon:last-child");
+    if (!b) return "no folder button";
+    const r = b.getBoundingClientRect();
+    if (!r.width) return "button has zero size";
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      at: `${Math.round(r.left + r.width / 2)},${Math.round(r.top + r.height / 2)}`,
+      buttonRect: `${Math.round(r.width)}x${Math.round(r.height)} @ ${Math.round(r.left)},${Math.round(r.top)}`,
+      topmost: top ? `${top.tagName.toLowerCase()}.${(top.className || "").toString().slice(0, 40)}` : "nothing",
+      isTheButton: top === b,
+    };
+  })();
+  const descNow = V.wf.desc;
   const slot = document.querySelector(".rt-folderslot");
   const folderUi = { open: !!slot && slot.childElementCount > 0, newFolder: String(V.wf.newFolder) };
   const integrity = {
@@ -1136,6 +1150,8 @@ function reportDiag() {
     dpr: devicePixelRatio,
     styles,
     fill,
+    hit,
+    descNow,
     stats: RT_STATS,
     folderUi,
     integrity,
@@ -1280,11 +1296,15 @@ function buildWorkflowBar() {
     }
   );
   const dir = btn(V.wf.desc ? "↓" : "↑", "icon", () => {
+    RT_STATS.dirClicks = (RT_STATS.dirClicks || 0) + 1;
     V.wf.desc = !V.wf.desc;
     paint();
   });
   dir.title = V.wf.desc ? "descending — click for ascending" : "ascending — click for descending";
-  const newFolder = btn("", "icon", () => openFolderInput(""));
+  const newFolder = btn("", "icon", () => {
+    RT_STATS.folderClicks = (RT_STATS.folderClicks || 0) + 1;
+    openFolderInput("");
+  });
   newFolder.appendChild(folderIcon(true));
   newFolder.title = "new folder — / makes subfolders";
   toolbar.append(search, sort, dir, newFolder);
