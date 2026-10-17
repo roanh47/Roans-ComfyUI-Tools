@@ -242,6 +242,9 @@ def load_store():
         data = json.load(fh)
     data.setdefault("models", {})
     data.setdefault("prompts", [])
+    data.setdefault("wf_meta", {})       # per workflow: display name, pin, custom order
+    data.setdefault("wf_folders", {})    # per folder: order, pin, collapsed
+    data.setdefault("model_folders", {})  # per model folder: order, pin
     for entry in data["models"].values():
         if "type" in entry and "model_type" not in entry:  # older key name
             entry["model_type"] = entry.pop("type")
@@ -342,11 +345,13 @@ def parse_workflow(path):
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
     except Exception as exc:
-        return {"name": name, "file": os.path.basename(path), "error": str(exc)}
+        return {"name": name, "file": os.path.basename(path), "rel": wf_rel(path), "error": str(exc)}
 
     out = {
         "name": name,
         "file": os.path.basename(path),
+        "rel": wf_rel(path),
+        "folder": os.path.dirname(wf_rel(path).replace("\\", "/")),
         "path": path,
         "modified": int(os.path.getmtime(path)),
         "format": "ui",
@@ -447,14 +452,78 @@ def parse_workflow(path):
     return out
 
 
-def scan_workflows(force=False):
-    d = workflows_dir()
-    if not os.path.isdir(d):
+def wf_rel(path):
+    """A workflow's path relative to the workflows root, forward slashes."""
+    return os.path.relpath(path, workflows_dir()).replace("\\", "/")
+
+
+def wf_abs(rel):
+    """Absolute path for a workflow-relative path, refusing anything outside the root."""
+    root = os.path.abspath(workflows_dir())
+    target = os.path.abspath(os.path.join(root, rel.replace("/", os.sep)))
+    if target != root and not target.startswith(root + os.sep):
+        raise ValueError(f"path escapes the workflows folder: {rel}")
+    return target
+
+
+def wf_folders():
+    """Every folder under the workflows root, nested ones included."""
+    root = workflows_dir()
+    if not os.path.isdir(root):
         return []
+    out = []
+    for dirpath, _dirs, _files in os.walk(root):
+        rel = os.path.relpath(dirpath, root).replace("\\", "/")
+        if rel != ".":
+            out.append(rel)
+    return sorted(out)
+
+
+def wf_mkdir(folder):
+    """Create a folder (and parents) under the workflows root."""
+    folder = (folder or "").strip().strip("/")
+    if not folder:
+        raise ValueError("folder name is required")
+    target = wf_abs(folder)
+    os.makedirs(target, exist_ok=True)
+    return folder
+
+
+def wf_move(rel, folder):
+    """Move a workflow file into a folder under the workflows root."""
+    src = wf_abs(rel)
+    if not os.path.isfile(src):
+        raise FileNotFoundError(rel)
+    folder = (folder or "").strip().strip("/")
+    dest_dir = wf_abs(folder) if folder else os.path.abspath(workflows_dir())
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, os.path.basename(src))
+    if os.path.abspath(src) == os.path.abspath(dest):
+        return wf_rel(dest)
+    if os.path.exists(dest):
+        raise FileExistsError(f"{os.path.basename(src)} already exists in {folder or 'the root'}")
+    os.replace(src, dest)
+    return wf_rel(dest)
+
+
+def scan_workflows(force=False):
+    """Every workflow under the root, nested folders included, meta merged in."""
+    root = workflows_dir()
+    if not os.path.isdir(root):
+        return []
+    store = load_store()
+    meta = store.get("wf_meta", {})
     items = []
-    for name in sorted(os.listdir(d)):
-        if name.lower().endswith(".json"):
-            items.append(parse_workflow(os.path.join(d, name)))
+    for dirpath, _dirs, filenames in os.walk(root):
+        for name in sorted(filenames):
+            if not name.lower().endswith(".json"):
+                continue
+            item = parse_workflow(os.path.join(dirpath, name))
+            m = meta.get(item.get("rel", ""), {})
+            item["display_name"] = m.get("name") or item["name"]
+            item["pinned"] = bool(m.get("pinned"))
+            item["order"] = m.get("order")
+            items.append(item)
     items.sort(key=lambda i: i["modified"], reverse=True)
     return items
 
@@ -467,11 +536,11 @@ def live_prompts():
             continue
         out.append(
             {
-                "id": f"wf::{wf['file']}::pos",
+                "id": f"wf::{wf.get('rel', wf['file'])}::pos",
                 "name": wf["name"],
                 "positive": wf["positive"],
                 "negative": wf.get("negative", ""),
-                "workflow": wf["file"],
+                "workflow": wf.get("rel", wf["file"]),
                 "tags": [],
                 "note": "",
                 "checkpoint": wf.get("checkpoint", ""),

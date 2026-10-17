@@ -28,11 +28,15 @@ def _js_path():
 
 async def get_state(request):
     force = request.query.get("force") == "1"
+    store = library.load_store()
     return web.json_response(
         {
             "models": library.scan_models(force=force),
             "workflows": library.scan_workflows(force=force),
             "prompts": library.saved_prompts() + library.live_prompts(),
+            "wf_folders": library.wf_folders(),
+            "wf_folder_meta": store.get("wf_folders", {}),
+            "model_folder_meta": store.get("model_folders", {}),
             "workflows_dir": library.workflows_dir(),
         }
     )
@@ -107,12 +111,88 @@ async def post_prompt_delete(request):
 
 async def get_workflow(request):
     """The raw workflow graph, so the UI can open a file straight onto the canvas."""
-    name = os.path.basename(request.query.get("file", ""))
-    path = os.path.join(library.workflows_dir(), name)
-    if not name.endswith(".json") or not os.path.isfile(path):
-        return web.json_response({"error": f"no such workflow: {name}"}, status=404)
+    rel = (request.query.get("rel") or request.query.get("file") or "").strip()
+    if not rel.lower().endswith(".json"):
+        return web.json_response({"error": f"not a workflow: {rel}"}, status=404)
+    try:
+        path = library.wf_abs(rel)  # refuses anything outside the workflows root
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    if not os.path.isfile(path):
+        return web.json_response({"error": f"no such workflow: {rel}"}, status=404)
     with open(path, encoding="utf-8") as fh:
         return web.json_response(json.load(fh))
+
+
+async def post_wf_meta(request):
+    """Display name / pin / custom order for one workflow."""
+    data = _body(request)
+    rel = data.get("rel")
+    if not rel:
+        return web.json_response({"error": "rel is required"}, status=400)
+    store = library.load_store()
+    entry = store["wf_meta"].setdefault(rel, {})
+    for key in ("name", "pinned", "order"):
+        if key in data:
+            entry[key] = data[key]
+    library.save_store(store)
+    return web.json_response({"ok": True, "rel": rel, "meta": entry})
+
+
+async def post_wf_folder(request):
+    """Order / pin / collapsed state for a workflow folder."""
+    data = _body(request)
+    folder = (data.get("folder") or "").strip().strip("/")
+    store = library.load_store()
+    if folder == "":
+        entry = store["wf_folders"].setdefault("", {})
+    else:
+        entry = store["wf_folders"].setdefault(folder, {})
+    for key in ("order", "pinned", "collapsed"):
+        if key in data:
+            entry[key] = data[key]
+    library.save_store(store)
+    return web.json_response({"ok": True, "folder": folder, "meta": entry})
+
+
+async def post_wf_mkdir(request):
+    """Create a real folder (nested paths allowed) in the workflows directory."""
+    folder = _body(request).get("folder") or ""
+    try:
+        made = library.wf_mkdir(folder)
+    except (ValueError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "folder": made, "folders": library.wf_folders()})
+
+
+async def post_wf_move(request):
+    """Move a workflow file into a folder (this renames it on disk)."""
+    data = _body(request)
+    rel = data.get("rel")
+    if not rel:
+        return web.json_response({"error": "rel is required"}, status=400)
+    try:
+        moved = library.wf_move(rel, data.get("folder") or "")
+    except FileExistsError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    except (ValueError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "rel": moved, "folders": library.wf_folders()})
+
+
+async def post_model_folder(request):
+    """Order / pin for a model folder (checkpoints, loras, …)."""
+    data = _body(request)
+    folder = (data.get("folder") or "").strip()
+    if not folder:
+        return web.json_response({"error": "folder is required"}, status=400)
+    store = library.load_store()
+    entry = store["model_folders"].setdefault(folder, {})
+    for key in ("order", "pinned"):
+        if key in data:
+            entry[key] = data[key]
+    library.save_store(store)
+    return web.json_response({"ok": True, "folder": folder, "meta": entry})
 
 
 async def post_rescan(request):
@@ -145,6 +225,11 @@ ROUTES = {
     ("POST", "prompt"): post_prompt,
     ("POST", "prompt_delete"): post_prompt_delete,
     ("POST", "rescan"): post_rescan,
+    ("POST", "wf_meta"): post_wf_meta,
+    ("POST", "wf_folder"): post_wf_folder,
+    ("POST", "wf_mkdir"): post_wf_mkdir,
+    ("POST", "wf_move"): post_wf_move,
+    ("POST", "model_folder"): post_model_folder,
 }
 
 
