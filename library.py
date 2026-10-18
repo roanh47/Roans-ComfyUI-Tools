@@ -655,17 +655,26 @@ def wf_delete(rel):
 
 
 def wf_rmdir(folder):
-    """Move a whole folder into .trash, metadata included."""
+    """Move a whole folder into .trash, metadata included.
+
+    A folder row can exist with no directory behind it: a name that only ever reached the
+    store, or a directory that was removed outside the UI. Trashing it still succeeds —
+    the bookkeeping is parked under .trash and the stale keys are dropped — instead of
+    answering 400, which left the row undeletable.
+    """
     folder = (folder or "").strip().strip("/")
     if not folder:
         raise ValueError("refusing to delete the root")
     src = wf_abs(folder)
+    store = load_store()
     if not os.path.isdir(src):
-        raise FileNotFoundError(folder)
+        parked = ".trash/" + os.path.basename(folder)
+        _move_meta_prefix(store, folder, parked)
+        save_store(store)
+        return parked
     dest = _unique(os.path.join(wf_trash_dir(), os.path.basename(folder)))
     os.replace(src, dest)
-    store = load_store()
-    _move_meta_prefix(store, folder, ".trash/" + os.path.basename(dest) if False else folder)
+    _move_meta_prefix(store, folder, ".trash/" + os.path.basename(dest))
     # the folder is gone, so its metadata goes too
     for key in list(store.get("wf_folders", {})):
         if key == folder or key.startswith(folder + "/"):

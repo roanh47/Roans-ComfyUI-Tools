@@ -1753,7 +1753,7 @@ function menuFor(kind, key) {
     if (!w) return null;
     return [
       { label: "Open", action: () => openWorkflow(w.rel) },
-      { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; paint(); } },
+      { label: "Rename…", action: () => { V.wf.editing = w.rel; V.wf.renaming = null; RT_WF_PAINT && RT_WF_PAINT(); } },
       { separator: true },
       ...(w.folder
         ? [
@@ -1774,7 +1774,7 @@ function menuFor(kind, key) {
     return [
       { label: "New folder…", action: () => RT_FOLDER_INPUT && RT_FOLDER_INPUT("") },
       { separator: true },
-      { label: "Rescan library", action: async () => { await load(true); paint(); toast("rescanned"); } },
+      { label: "Rescan library", action: async () => { await load(true); RT_WF_PAINT && RT_WF_PAINT(); toast("rescanned"); } },
     ];
   }
   if (kind === "folder") {
@@ -1782,11 +1782,11 @@ function menuFor(kind, key) {
     const meta = wfFolderMetaOf(folder);
     return [
       { label: "New subfolder…", action: () => RT_FOLDER_INPUT && RT_FOLDER_INPUT(folder) },
-      { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; paint(); } },
+      { label: "Rename folder…", action: () => { V.wf.renaming = folder; V.wf.editing = null; RT_WF_PAINT && RT_WF_PAINT(); } },
       { label: meta.pinned ? "Unpin folder" : "Pin folder to top", action: async () => {
           await api("/wf_folder", { folder, pinned: !meta.pinned });
           await load();
-          paint();
+          RT_WF_PAINT && RT_WF_PAINT();
         } },
       { separator: true },
       { label: "Move folder to trash", danger: true, action: async () => {
@@ -1797,7 +1797,7 @@ function menuFor(kind, key) {
           } catch (e) {
             toast(String(e.message || e), "error");
           }
-          paint();
+          RT_WF_PAINT && RT_WF_PAINT();
         } },
     ];
   }
@@ -1858,7 +1858,7 @@ async function moveWorkflowTo(rel, folder) {
   } catch (e) {
     toast(String(e.message || e), "error");
   }
-  paint();
+  RT_WF_PAINT && RT_WF_PAINT();
 }
 
 async function trashWorkflow(w) {
@@ -1869,7 +1869,7 @@ async function trashWorkflow(w) {
   } catch (e) {
     toast(String(e.message || e), "error");
   }
-  paint();
+  RT_WF_PAINT && RT_WF_PAINT();
 }
 
 // Drop a workflow onto another one: same folder means reorder, otherwise it is a
@@ -1893,7 +1893,7 @@ async function dropOntoWorkflow(draggedRel, target) {
   V.wf.sort = "custom";
   await load(true);
   toast("order saved (custom)");
-  paint();
+  RT_WF_PAINT && RT_WF_PAINT();
 }
 
 function dragPayload(ev, value) {
@@ -2360,7 +2360,7 @@ function buildWorkflowBar() {
     const shown = S.workflows.filter(wfMatches).length;
     tree.appendChild(el("div", "rt-dim", `${shown} of ${S.workflows.length} workflows`));
   }
-
+  RT_WF_PAINT = paint;
   paint();
   return bar;
 }
