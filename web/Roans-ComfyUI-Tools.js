@@ -161,6 +161,7 @@ const CSS = `
 .rt-folder .rt-name { font-weight:500; }
 .rt-card { margin-left:16px; }   /* workflows sit inside their folder, visibly */
 .rt-card.drop-before { box-shadow:inset 0 2px 0 0 var(--rt-accent,#60a5fa); }
+.rt-scroll.drop-root { box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); border-radius:6px; }
 .rt-folder.drop-into { background:var(--rt-surface-hover,#313235);
       box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); }
 .rt-add { display:flex; align-items:center; gap:8px; height:var(--rt-ctl); padding:0 10px;
@@ -1695,6 +1696,22 @@ function contextMenu(ev, items) {
       continue;
     }
     item.onclick = async () => {
+      if (item.__rtRan) return; // the pointerdown path already fired
+      item.__rtRan = true;
+      closeContextMenu();
+      try {
+        await it.action();
+      } catch (e) {
+        toast(String(e.message || e), "error");
+      }
+    };
+    // The workflows panel swallows clicks on our rows (ComfyUI's Vue handlers run
+    // first), which is why a real mouse could open this menu but never activate an
+    // item. pointerdown in the capture phase is not swallowed, so that is the path
+    // that actually runs the action.
+    item.__rtAct = async () => {
+      if (item.__rtRan) return;
+      item.__rtRan = true;
       closeContextMenu();
       try {
         await it.action();
@@ -1779,6 +1796,17 @@ function menuFor(kind, key) {
 
 if (!window.__rtMenuHooked) {
   window.__rtMenuHooked = true;
+  window.addEventListener(
+    "pointerdown",
+    (ev) => {
+      const item = ev.target && ev.target.closest && ev.target.closest(".rt-menu-item");
+      if (!item || !item.__rtAct) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      item.__rtAct();
+    },
+    true
+  );
   window.addEventListener(
     "contextmenu",
     (ev) => {
@@ -1926,6 +1954,26 @@ function buildWorkflowBar() {
   tree.style.cssText = "flex:1 1 auto;min-height:0;overflow-y:auto;padding-top:4px;";
   tree.dataset.rtKind = "space";
   tree.dataset.rtKey = "";
+
+  // Dropping on the empty space means "out of the folder, back to the root" — there
+  // was no target for that at all, so a file inside a folder could never be dragged
+  // out again.
+  tree.ondragover = (ev) => {
+    if (!String(ev.dataTransfer.types).includes("text/plain")) return;
+    ev.preventDefault();
+    tree.classList.add("drop-root");
+  };
+  tree.ondragleave = () => tree.classList.remove("drop-root");
+  tree.ondrop = async (ev) => {
+    ev.preventDefault();
+    tree.classList.remove("drop-root");
+    const payload = ev.dataTransfer.getData("text/plain");
+    if (!payload.startsWith("wf:")) return;
+    const rel = payload.slice(3);
+    const w = S.workflows.find((x) => x.rel === rel);
+    if (!w || !w.folder) return; // already at the root
+    await moveWorkflowTo(rel, "");
+  };
   bar.appendChild(tree);
 
   RT_FOLDER_INPUT = (prefix, onCreated) => {
