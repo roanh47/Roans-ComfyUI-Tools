@@ -216,6 +216,7 @@ const V = {
 let uiStamp = null;
 let RT_FOLDER_INPUT = null;
 let RT_MD_PAINT = null;
+let RT_WF_PAINT = null; // repaint hook of the workflow bar
 let RT_WF_DRAG = null; // { start(), end() } — the "out of the folder" drop target
 
 // An interaction log: every pointer/context event on our own panels, plus what
