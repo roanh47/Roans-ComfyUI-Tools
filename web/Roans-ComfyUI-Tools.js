@@ -978,6 +978,23 @@ function decorateNativeTabs() {
     img.onerror = () => img.remove(); // no avatar file -> no badge, no breakage
     btn.appendChild(img);
   }
+  orderSidebarTabs();
+}
+
+/**
+ * Prompts sits directly above Apps. ComfyUI appends extension tabs at the end of
+ * the strip (`registerSidebarTab` only offers whole-array prepend), so the position
+ * is enforced on the DOM and re-applied from the observer after each Vue re-render.
+ * Idempotent: it does nothing once the button already precedes Apps.
+ */
+function orderSidebarTabs() {
+  const ours = document.querySelector('[data-testid="roansPrompts-tab-button"]');
+  const apps = document.querySelector('[data-testid="apps-tab-button"]');
+  if (!ours || !apps) return;
+  const strip = apps.parentElement;
+  if (!strip || ours.parentElement !== strip) return;
+  if (ours.nextElementSibling === apps) return;
+  strip.insertBefore(ours, apps);
 }
 
 /* ---- error reporting -------------------------------------------------------- */
@@ -2066,13 +2083,13 @@ function buildModelsBar() {
   head.appendChild(el("span", "rt-spacer"));
   const missing = S.models.filter((m) => !m.link).length;
   head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));
-  const relink = btn("links ophalen", null, async () => {
+  const relink = btn("fetch links", null, async () => {
     relink.disabled = true;
-    relink.textContent = "bezig…";
+    relink.textContent = "working…";
     try {
       const r = await api("/relink", { limit: 12 });
       await load(true);
-      toast(`${r.linked.length} links gevonden, ${r.unknown.length} onbekend (lokale merges)`);
+      toast(`${r.linked.length} links found, ${r.unknown.length} unknown (local merges)`);
     } catch (e) {
       toast("lookup failed: " + e, "error");
     }
