@@ -112,6 +112,10 @@ git add -A && git commit -m "..." && git push origin main && git push onedrive H
 `origin` = GitHub (code only). `onedrive` = bare repo backup (`OneDrive\Coding\Roans-ComfyUI-Tools.git`).
 Both are pushed on every commit; verify with `git rev-parse HEAD origin/main onedrive/main`.
 
+GitHub auth on this machine goes through **`gh`** (logged in as `roanh47`, `gh auth setup-git`
+run once), so `git push origin main` uses gh's credentials. Never put a token in the remote URL,
+and use `gh` for anything repo/PR/issue shaped (`gh repo view`, `gh pr create`, `gh run list`).
+
 ## Gotcha
 Deleting or renaming this folder fails with **"Device or resource busy" / WinError 32** if any
 process has it as its working directory — including a Python kernel started with `cd` inside it.
