@@ -34,9 +34,11 @@ const CSS = `
           padding:8px 8px 10px; border-bottom:1px solid var(--rt-line); }
 .rt-head { display:flex; align-items:center; gap:8px; min-width:0; flex-wrap:nowrap; }
 .rt-head.wrap { flex-wrap:wrap; }
+/* the one divider: under the search/button row, full width of the panel */
+.rt-toolbar { margin:0 -8px; padding:0 8px 8px; border-bottom:1px solid var(--rt-line); }
 .rt-spacer { flex:1 1 auto; min-width:0; }
 .rt-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
-             padding:8px; display:flex; flex-direction:column; gap:6px;
+             padding:8px; display:flex; flex-direction:column; gap:4px;
              /* A classic Windows scrollbar is ~15px wide and only exists while the
                 list overflows, so the content width jumped the moment it appeared and
                 every badge row re-wrapped — that is the "spacing suddenly tighter"
@@ -112,7 +114,7 @@ const CSS = `
 .rt-title:hover { color:var(--rt-accent); }
 .rt-name { font-size:14px; font-weight:400; color:var(--fg-color,#fff);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-.rt-folder { flex-direction:row; gap:8px; padding:6px 8px; }
+.rt-folder { flex-direction:row; gap:8px; padding:4px 8px; }
 .rt-folder:hover { background:var(--rt-surface); }
 
 /* ---- secondary line: badges, not bubbles -------------------------------- */
@@ -1871,7 +1873,7 @@ function buildWorkflowBar() {
   RT_STATS.wfBuilds += 1;
   const bar = el("div", "rt-wf-bar rt-app");
   bar.style.cssText =
-    "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
+    "display:flex;flex-direction:column;gap:8px;padding:8px;";
 
   // same title block as the Models and Prompts panels
   const ph = el("div", "rt-panel-head");
@@ -1881,7 +1883,7 @@ function buildWorkflowBar() {
   ph.appendChild(el("span", "rt-dim", `${S.workflows.length} workflows`));
   bar.appendChild(ph);
 
-  const toolbar = el("div", "rt-head");
+  const toolbar = el("div", "rt-head rt-toolbar");
   const search = input("rt-grow", V.wf.q, "search workflows…");
   search.oninput = () => {
     V.wf.q = search.value;
@@ -2244,7 +2246,7 @@ function buildModelsBar() {
   RT_STATS.mdBuilds += 1;
   const bar = el("div", "rt-md-bar rt-app");
   bar.style.cssText =
-    "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
+    "display:flex;flex-direction:column;gap:8px;padding:8px;";
 
   // Always our own title block: Models, Workflows and Prompts must look identical, and
   // the wording is the plain panel name (not the tab's longer accessible label).
@@ -2276,7 +2278,7 @@ function buildModelsBar() {
   head.appendChild(relink);
   bar.appendChild(head);
 
-  const toolbar = el("div", "rt-head");
+  const toolbar = el("div", "rt-head rt-toolbar");
   const search = input("rt-grow", V.model.q, "search models…");
   search.oninput = () => {
     V.model.q = search.value;
