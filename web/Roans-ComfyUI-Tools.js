@@ -161,6 +161,7 @@ const CSS = `
 .rt-folder .rt-name { font-weight:500; }
 .rt-card { margin-left:16px; }   /* workflows sit inside their folder, visibly */
 .rt-card.drop-before { box-shadow:inset 0 2px 0 0 var(--rt-accent,#60a5fa); }
+    .rt-card.drop-after { box-shadow:inset 0 -2px 0 0 var(--rt-accent,#60a5fa); }
 .rt-scroll.drop-root { box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); border-radius:6px; }
 /* appears only while a workflow is being dragged: the "out of the folder" target.
    It sits in normal flow at the top of the list (not sticky) — a sticky bar covered
@@ -1538,6 +1539,11 @@ function reportDiag() {
     client: RT_CLIENT,
     dpr: devicePixelRatio,
     styles,
+    wfVisibleRows: [...document.querySelectorAll('.rt-wf-bar [data-rt-kind="wf"]')].map((n) => n.dataset.rtKey).slice(0, 8),
+    wfStoredOrder: S.workflows.filter((w) => (w.folder || "") === "")
+      .sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order))
+      .map((w) => w.rel).slice(0, 8),
+    wfSortMode: V.wf.sort,
     fill,
     menuOpened: RT_STATS.menuOpened || 0,
     lastMenuAt: RT_STATS.lastMenuAt || null,
@@ -1875,7 +1881,16 @@ async function trashWorkflow(w) {
 
 // Drop a workflow onto another one: same folder means reorder, otherwise it is a
 // move first and then an insert at that spot in the target folder.
-async function dropOntoWorkflow(draggedRel, target) {
+function visibleWorkflowRows(folder) {
+  // the rows on screen, in the order they are on screen. Reading the stored order
+  // instead was wrong whenever the panel was sorted by name or by recency: that
+  // sequence is not the one the user is pointing at.
+  return [...document.querySelectorAll('.rt-wf-bar [data-rt-kind="wf"]')]
+    .map((n) => n.dataset.rtKey)
+    .filter((r) => r.split("/").slice(0, -1).join("/") === folder);
+}
+
+async function dropOntoWorkflow(draggedRel, target, after) {
   const folder = target.folder || "";
   const base = draggedRel.split("/").pop();
   const from = draggedRel.split("/").slice(0, -1).join("/");
@@ -1884,12 +1899,9 @@ async function dropOntoWorkflow(draggedRel, target) {
     await api("/wf_move", { rel: draggedRel, folder });
     rel = folder ? `${folder}/${base}` : base;
   }
-  const list = S.workflows
-    .filter((w) => (w.folder || "") === folder && w.rel !== draggedRel && w.rel !== rel)
-    .sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order))
-    .map((w) => w.rel);
+  const list = visibleWorkflowRows(folder).filter((r) => r !== draggedRel && r !== rel);
   const at = list.indexOf(target.rel);
-  list.splice(at < 0 ? list.length : at, 0, rel);
+  list.splice(at < 0 ? list.length : at + (after ? 1 : 0), 0, rel);
   await api("/wf_order", { rels: list });
   V.wf.sort = "custom";
   await load(true);
@@ -2152,18 +2164,24 @@ function buildWorkflowBar() {
     card.ondragover = (ev) => {
       if (!String(ev.dataTransfer.types).includes("text/plain")) return;
       ev.preventDefault();
-      card.classList.add("drop-before");
+      // top half of the row = land above it, bottom half = land below it, which is
+      // exactly where the line is drawn. The line and the landing are one rule.
+      const r = card.getBoundingClientRect();
+      const after = ev.clientY > r.top + r.height / 2;
+      card.classList.toggle("drop-after", after);
+      card.classList.toggle("drop-before", !after);
     };
-    card.ondragleave = () => card.classList.remove("drop-before");
+    card.ondragleave = () => card.classList.remove("drop-before", "drop-after");
     card.ondrop = async (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      card.classList.remove("drop-before");
+      const after = card.classList.contains("drop-after");
+      card.classList.remove("drop-before", "drop-after");
       const payload = ev.dataTransfer.getData("text/plain");
       if (!payload.startsWith("wf:")) return;
       const dragged = payload.slice(3);
       if (dragged === w.rel) return;
-      await dropOntoWorkflow(dragged, w);
+      await dropOntoWorkflow(dragged, w, after);
     };
 
     // model badges live on their own line: long checkpoint names pushed the
