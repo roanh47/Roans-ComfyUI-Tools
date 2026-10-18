@@ -36,7 +36,17 @@ const CSS = `
 .rt-head.wrap { flex-wrap:wrap; }
 .rt-spacer { flex:1 1 auto; min-width:0; }
 .rt-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
-             padding:8px; display:flex; flex-direction:column; gap:6px; }
+             padding:8px; display:flex; flex-direction:column; gap:6px;
+             /* A classic Windows scrollbar is ~15px wide and only exists while the
+                list overflows, so the content width jumped the moment it appeared and
+                every badge row re-wrapped — that is the "spacing suddenly tighter"
+                effect. Reserve the gutter so the width never changes, and draw the
+                same slim bar ComfyUI's own panels use instead of the browser default. */
+             scrollbar-gutter:stable; }
+.rt-scroll::-webkit-scrollbar { width:8px; }
+.rt-scroll::-webkit-scrollbar-track { background:transparent; }
+.rt-scroll::-webkit-scrollbar-thumb { background:var(--rt-line); border-radius:4px; }
+.rt-scroll::-webkit-scrollbar-thumb:hover { background:var(--rt-surface-hover); }
 
 /* ---- panel title: identical box to ComfyUI's own header ------------------- */
 /* SidebarTabTemplate renders the panel title as "truncate font-bold" inside a
@@ -724,10 +734,22 @@ function promptEditor(host, preset, onDone) {
 function renderPrompts(root) {
   injectStyles();
   root.innerHTML = "";
-  const wrap = el("div", "rt");
+  // `rt-app` carries the metric variables (control height, surfaces, radius, muted
+  // colour) that every control below reads through var(). Without it the Prompts
+  // panel fell back to auto-sized buttons and unstyled labels — the one panel that
+  // did not look like the others.
+  const wrap = el("div", "rt rt-app");
   root.appendChild(wrap);
 
+  // same title block as the Models and Workflows bars
+  const ph = el("div", "rt-panel-head");
+  ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("roansPrompts", "Prompts")));
+  ph.appendChild(el("span", "rt-spacer"));
+  ph.appendChild(el("span", "rt-dim", `${S.prompts.length} prompts`));
+  wrap.appendChild(ph);
+
   const bar = el("div", "rt-bar");
+  bar.style.borderBottom = "0";
   const search = input("rt-grow", V.prompt.q, "search prompts, tags…");
   search.oninput = () => {
     V.prompt.q = search.value;
@@ -761,8 +783,8 @@ function renderPrompts(root) {
   bar.append(search, group, grab, add);
   wrap.appendChild(bar);
 
-  const chips = el("div", "rt-bar");
-  chips.style.paddingTop = "0";
+  const chips = el("div", "rt-chips");
+  chips.style.cssText = "padding:0 8px 8px;";
   wrap.appendChild(chips);
 
   const editorHost = el("div");
@@ -951,7 +973,9 @@ let repaint = () => {};
 const AVATAR_URL = "/extensions/Roans-ComfyUI-Tools/avatar.jpg";
 const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
 const AVATAR_GAP = 5; // px — the spacing, used for BOTH the top and the left offset
-const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
+// Only the panels we are actively shaping carry the badge; the Node Library is
+// ComfyUI's own and stays untouched until we work on it.
+const AVATAR_TABS = ["workflows", "model-library", "roansPrompts"];
 
 // The tab's own accessible name is the panel title the app itself uses for that
 // tab ("Model Library (m)") — read it instead of inventing a second wording, and
@@ -1458,6 +1482,36 @@ function reportDiag() {
           ...box(c),
           kids: [...c.children].map((k) => ({ ...box(k), top: Math.round(k.getBoundingClientRect().top) })),
         })),
+      };
+      // "spacing changes once a scrollbar shows up": measure the scrollport itself,
+      // the pixel step between the first rows, and how tall the badge line got (a
+      // narrower card wraps its badges, which reads as tighter rows).
+      const sc = (e) =>
+        e
+          ? {
+              cls: (e.className || "").toString().trim().slice(0, 28),
+              w: e.clientWidth,
+              offW: e.offsetWidth,
+              sb: e.offsetWidth - e.clientWidth,
+              h: e.clientHeight,
+              sh: e.scrollHeight,
+              over: e.scrollHeight - e.clientHeight,
+              gap: getComputedStyle(e).gap,
+              pad: getComputedStyle(e).padding,
+              gutter: getComputedStyle(e).scrollbarGutter || "",
+            }
+          : null;
+      const kids = list ? [...list.children] : [];
+      out[sel + " scroll"] = {
+        ours: sc(list),
+        native: sc(bar.closest(".p-scrollpanel")),
+        barH: Math.round(bar.getBoundingClientRect().height),
+        steps: kids.slice(1, 5).map((k, i) => Math.round(k.getBoundingClientRect().top - kids[i].getBoundingClientRect().bottom)),
+        kidH: kids.slice(0, 5).map((k) => Math.round(k.getBoundingClientRect().height)),
+        badgeH: [...bar.querySelectorAll(".rt-card")].slice(0, 3).map((c) => {
+          const b = c.querySelector(".rt-badges");
+          return b ? Math.round(b.getBoundingClientRect().height) : 0;
+        }),
       };
     }
     return out;
