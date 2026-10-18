@@ -55,11 +55,13 @@ const CSS = `
 
 /* ---- panel title: identical box to ComfyUI's own header ------------------- */
 /* SidebarTabTemplate renders the panel title as "truncate font-bold" inside a
-   "min-h-16 px-3" panel (16px/700, 64px min-height, 12px side padding, bottom
-   border). The Models and Workflows panels in this build draw no such header, so
-   our bars print one in exactly those values instead of a 12px muted label. */
+   "min-h-16 px-3" panel: 16px/700, 64px min-height, 12px side padding. The Models
+   and Workflows panels in this build draw no header of their own, so our bars print
+   one in exactly those values. */
+/* The title row carries NO divider: ComfyUI puts the line under the search/button row,
+   not under the title (see the Node Library panel). */
 .rt-panel-head { display:flex; align-items:center; gap:8px; min-height:64px;
-      padding:0 12px; box-sizing:border-box; border-bottom:1px solid var(--rt-line); }
+      padding:0 12px; box-sizing:border-box; }
 .rt-panel-title { font-size:16px; font-weight:700; color:var(--fg-color,#fff);
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 
@@ -754,7 +756,7 @@ function renderPrompts(root) {
   wrap.appendChild(ph);
 
   const bar = el("div", "rt-bar");
-  bar.style.borderBottom = "0";
+  // the divider belongs under the search/button row, not under the title
   const search = input("rt-grow", V.prompt.q, "search prompts, tags…");
   search.oninput = () => {
     V.prompt.q = search.value;

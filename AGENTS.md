@@ -47,6 +47,23 @@ Roans-ComfyUI-Tools/
 `library.py` are `importlib.reload`-ed when their mtime moves. Keep new logic in those two files
 and you never restart ComfyUI. Treat `__init__.py` as a coordinator that should never change.
 
+## Style: ComfyUI's own, never ours
+This extension must look like it shipped with ComfyUI. Every value — font size, weight, colour,
+padding, radius, divider, row height — is either measured in the running app or read out of the
+frontend bundle (`SidebarTabTemplate` and friends) and copied. Inventing a look is a bug, even if
+it is prettier.
+
+- **Title row**: 16px/700, 64px min-height, 12px side padding, wording is the plain panel name
+  (`Models`, `Workflows`, `Prompts`). **No divider under the title.**
+- **Divider**: exactly one, under the search/button row, not under the title. The Node Library
+  panel is the reference layout.
+- **Controls**: 32px tall, 14px/500, radius 6, 8px gaps. Small text 12px, muted `#8a8a8a`.
+- **Lists**: the list scrolls, rows keep their natural height (`flex: 0 0 auto`) — a column
+  flexbox will otherwise squeeze rows the moment it overflows, which reads as a spacing change.
+- **Measure, don't guess**: take the numbers from the live DOM (`getComputedStyle`,
+  `getBoundingClientRect`) or the shipped `.map`/bundle; screenshot both states when a layout
+  complaint comes in.
+
 ## UI integration rules (learned the hard way)
 
 - **Modify the native panels, never replace them.** ComfyUI's Models and Workflows panels are Vue
