@@ -1359,6 +1359,52 @@ function reportDiag() {
     cardRadius: card ? getComputedStyle(card).borderRadius : "",
     cardFont: card ? getComputedStyle(card).fontSize : "",
   };
+  // "folders will not open" needs the rendered result, not the intent: what the
+  // workflows tree actually contains, and what each folder row looks like.
+  const wfTree = (() => {
+    const tree = document.querySelector(".rt-wf-bar .rt-scroll");
+    if (!tree) return "no workflows tree mounted";
+    return {
+      children: tree.children.length,
+      folders: [...tree.querySelectorAll(".rt-folder")].map((f) => ({
+        label: (f.querySelector(".rt-name") || {}).textContent || "",
+        caret: (f.querySelector("button") || {}).textContent || "",
+        fold: (f.dataset || {}).rtKey || "",
+        ml: f.style.marginLeft || "",
+      })),
+      cards: tree.querySelectorAll(".rt-card").length,
+      cardsMl: [...tree.querySelectorAll(".rt-card")].slice(0, 6).map((c) => c.style.marginLeft || ""),
+      rows: [...tree.children].slice(0, 16).map((c) => ({
+        cls: (c.className || "").toString().trim(),
+        text: (c.innerText || "").replace(/\s+/g, " ").trim().slice(0, 44),
+        ml: c.style.marginLeft || "",
+        h: Math.round(c.getBoundingClientRect().height),
+      })),
+    };
+  })();
+  // Vertical rhythm of our own labels: the "sections jump closer together" report
+  // is a spacing question, so measure it instead of eyeballing CSS.
+  const spacing = (() => {
+    const out = {};
+    for (const sel of [".rt-wf-bar", ".rt-md-bar"]) {
+      const bar = document.querySelector(sel);
+      if (!bar) continue;
+      out[sel] = [...bar.querySelectorAll(".rt-sec")].map((s) => {
+        const p = s.parentElement;
+        return {
+          t: (s.textContent || "").slice(0, 22),
+          top: Math.round(s.getBoundingClientRect().top),
+          h: Math.round(s.getBoundingClientRect().height),
+          mt: getComputedStyle(s).marginTop,
+          mb: getComputedStyle(s).marginBottom,
+          parent: (p.className || "").toString().trim().slice(0, 30),
+          parentGap: getComputedStyle(p).gap,
+          parentPad: getComputedStyle(p).padding,
+        };
+      });
+    }
+    return out;
+  })();
   return {
     client: RT_CLIENT,
     dpr: devicePixelRatio,
@@ -1394,6 +1440,8 @@ function reportDiag() {
     hiddenNow,
     barParentKids,
     at: new Date().toISOString(),
+    wfTree,
+    spacing,
   };
 }
 
@@ -1912,10 +1960,14 @@ function buildWorkflowBar() {
     const headRow = el("div", "rt-folder");
     headRow.style.marginLeft = `${depth * 10}px`;
     const caret = btn(collapsed ? "▸" : "▾", "icon", async () => {
+      RT_STATS.caretClicks = (RT_STATS.caretClicks || 0) + 1;
+      RT_STATS.caretLast = folder;
       if (V.wf.collapsed.has(folder)) V.wf.collapsed.delete(folder);
       else V.wf.collapsed.add(folder);
       await api("/wf_folder", { folder, collapsed: V.wf.collapsed.has(folder) });
+      RT_STATS.caretSaved = V.wf.collapsed.has(folder) ? "collapsed" : "expanded";
       paint();
+      RT_STATS.caretPaints = (RT_STATS.caretPaints || 0) + 1;
     });
     headRow.appendChild(caret);
     const pin = btn(meta.pinned ? "★" : "☆", "icon", async () => {
