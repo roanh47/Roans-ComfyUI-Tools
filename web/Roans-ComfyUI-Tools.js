@@ -195,9 +195,12 @@ function injectStyles() {
 
 const S = { models: [], workflows: [], prompts: [], wfFolders: [], wfFolderMeta: {}, modelFolderMeta: {}, loadedAt: 0 };
 const V = {
-  model: { q: "", type: "All", sort: "name", desc: false, group: "type", open: new Set(), collapsed: new Set() },
+  // The folder toggle works on the EFFECTIVE state, not just the in-memory set: a
+  // folder the server marked collapsed renders as ▸ while the set is empty, so the
+  // old code re-collapsed it on the first click and it never opened.
+  model: { q: "", type: "All", sort: "name", desc: false, group: "type", open: new Set(), collapsed: new Set(), expanded: new Set() },
   prompt: { q: "", kind: "all", group: "none", open: new Set(), collapsed: new Set() },
-  wf: { q: "", sort: "recent", desc: true, collapsed: new Set(), editing: null, moving: null, newFolder: null },
+  wf: { q: "", sort: "recent", desc: true, collapsed: new Set(), expanded: new Set(), editing: null, moving: null, newFolder: null },
 };
 
 let uiStamp = null;
@@ -259,6 +262,10 @@ if (!window.__rtEvHooked) {
 }
 
 const RT_STATS = { wfBuilds: 0, mdBuilds: 0, injections: 0, hides: 0, observerPasses: 0 };
+// Read-only live view for diagnosis over the devtools protocol (and for the diag
+// report): the folder-collapse state, the meta the server sent, and where each
+// workflow thinks it lives. Nothing writes through this.
+window.__rt = { V, S, stats: RT_STATS };
 let pollFails = 0;
 
 /* ------------------------------------------------------------------ helpers */
@@ -2067,7 +2074,7 @@ function buildWorkflowBar() {
     const items = wfSorted((byFolder.get(folder) || []).filter(wfMatches));
     const childFolders = (kids.get(folder) || []).slice().sort(wfFolderSort);
     const label = folder === ROOT_KEY ? "all workflows" : folder.split("/").pop();
-    const collapsed = V.wf.collapsed.has(folder) || meta.collapsed;
+    const collapsed = !V.wf.expanded.has(folder) && (V.wf.collapsed.has(folder) || meta.collapsed);
 
     if (folder === ROOT_KEY) {
       // The root is where the list lives, not a folder: nothing to fold, no label.
@@ -2080,10 +2087,17 @@ function buildWorkflowBar() {
     const caret = btn(collapsed ? "▸" : "▾", "icon", async () => {
       RT_STATS.caretClicks = (RT_STATS.caretClicks || 0) + 1;
       RT_STATS.caretLast = folder;
-      if (V.wf.collapsed.has(folder)) V.wf.collapsed.delete(folder);
-      else V.wf.collapsed.add(folder);
-      await api("/wf_folder", { folder, collapsed: V.wf.collapsed.has(folder) });
-      RT_STATS.caretSaved = V.wf.collapsed.has(folder) ? "collapsed" : "expanded";
+      // flip what the user SEES, and remember it explicitly
+      const next = !collapsed;
+      if (next) {
+        V.wf.collapsed.add(folder);
+        V.wf.expanded.delete(folder);
+      } else {
+        V.wf.collapsed.delete(folder);
+        V.wf.expanded.add(folder);
+      }
+      await api("/wf_folder", { folder, collapsed: next });
+      RT_STATS.caretSaved = next ? "collapsed" : "expanded";
       paint();
       RT_STATS.caretPaints = (RT_STATS.caretPaints || 0) + 1;
     });
@@ -2254,14 +2268,8 @@ function buildModelsBar() {
   ph.style.margin = "-8px -8px 0";
   ph.appendChild(el("span", "rt-panel-title", "Models"));
   ph.appendChild(el("span", "rt-spacer"));
-  const missing0 = S.models.filter((m) => !m.link).length;
-  ph.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing0} without a link`));
-  bar.appendChild(ph);
-
-  const head = el("div", "rt-head");
-  head.appendChild(el("span", "rt-spacer"));
   const missing = S.models.filter((m) => !m.link).length;
-  head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));
+  ph.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));
   const relink = btn("fetch links", null, async () => {
     relink.disabled = true;
     relink.textContent = "working…";
@@ -2275,8 +2283,8 @@ function buildModelsBar() {
     paint();
   });
   relink.title = "read the hash of every file that has no link yet and ask Civitai which model it is";
-  head.appendChild(relink);
-  bar.appendChild(head);
+  ph.appendChild(relink);
+  bar.appendChild(ph);
 
   const toolbar = el("div", "rt-head rt-toolbar");
   const search = input("rt-grow", V.model.q, "search models…");
@@ -2426,13 +2434,19 @@ function buildModelsBar() {
     for (const folder of folders) {
       const meta = modelFolderMetaOf(folder);
       const items = modelsSorted(byFolder.get(folder).filter(modelMatches));
-      const collapsed = V.model.collapsed.has(folder) || meta.collapsed;
+      const collapsed = !V.model.expanded.has(folder) && (V.model.collapsed.has(folder) || meta.collapsed);
 
       const fh = el("div", "rt-folder");
       fh.appendChild(
         btn(collapsed ? "▸" : "▾", "icon", () => {
-          if (V.model.collapsed.has(folder)) V.model.collapsed.delete(folder);
-          else V.model.collapsed.add(folder);
+          const next = !collapsed; // the opposite of what is on screen
+          if (next) {
+            V.model.collapsed.add(folder);
+            V.model.expanded.delete(folder);
+          } else {
+            V.model.collapsed.delete(folder);
+            V.model.expanded.add(folder);
+          }
           paint();
         })
       );
