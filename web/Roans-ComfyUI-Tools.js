@@ -36,7 +36,17 @@ const CSS = `
 .rt-head.wrap { flex-wrap:wrap; }
 .rt-spacer { flex:1 1 auto; min-width:0; }
 .rt-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
-             padding:8px; display:flex; flex-direction:column; gap:2px; }
+             padding:8px; display:flex; flex-direction:column; gap:6px; }
+
+/* ---- panel title: identical box to ComfyUI's own header ------------------- */
+/* SidebarTabTemplate renders the panel title as "truncate font-bold" inside a
+   "min-h-16 px-3" panel (16px/700, 64px min-height, 12px side padding, bottom
+   border). The Models and Workflows panels in this build draw no such header, so
+   our bars print one in exactly those values instead of a 12px muted label. */
+.rt-panel-head { display:flex; align-items:center; gap:8px; min-height:64px;
+      padding:0 12px; box-sizing:border-box; border-bottom:1px solid var(--rt-line); }
+.rt-panel-title { font-size:16px; font-weight:700; color:var(--fg-color,#fff);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 
 /* ---- controls: same box as ComfyUI's own -------------------------------- */
 .rt-btn, .rt-input, .rt-select {
@@ -70,9 +80,14 @@ const CSS = `
 .rt-mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--rt-muted); }
 
 /* ---- rows: ComfyUI's tree node box -------------------------------------- */
+/* Rhythm taken from the values measured live in this build: tree rows sit on a
+   2px pad with a 4px gap and radius 6, panel buttons are 32px tall with 14px/500
+   labels, small text is 12px, muted is #8a8a8a. Our rows carry 2-3 lines where the
+   native tree carries one, so the internal gaps use the app's 8px unit — at 6px the
+   badges crowded the next card as soon as a section was expanded. */
 .rt-card, .rt-folder, .rt-root, .rt-row {
-  display:flex; flex-direction:column; gap:6px; min-width:0;
-  border:0; border-radius:4px; background:transparent; padding:6px 8px; }
+  display:flex; flex-direction:column; gap:8px; min-width:0;
+  border:0; border-radius:6px; background:transparent; padding:8px; }
 .rt-card:hover { background:var(--rt-surface); }
 .rt-card .rt-head, .rt-folder { align-items:center; }
 .rt-title { font-size:14px; font-weight:400; color:var(--fg-color,#fff); min-width:0;
@@ -84,8 +99,8 @@ const CSS = `
 .rt-folder:hover { background:var(--rt-surface); }
 
 /* ---- secondary line: badges, not bubbles -------------------------------- */
-.rt-badges { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding-left:2px; }
-.rt-badge { font-size:11px; padding:2px 6px; border-radius:4px; white-space:nowrap;
+.rt-badges { display:flex; gap:6px 8px; flex-wrap:wrap; align-items:center; padding-left:0; }
+.rt-badge { font-size:12px; padding:2px 6px; border-radius:4px; white-space:nowrap;
       background:var(--rt-surface); color:var(--rt-muted); border:0; opacity:1; }
 .rt-badge.t { color:#a3cfa3; }
 .rt-badge.k { color:#d4b09c; }
@@ -938,6 +953,16 @@ const AVATAR_SIZE = 10; // px — the circle in the bottom-right of each icon
 const AVATAR_GAP = 5; // px — the spacing, used for BOTH the top and the left offset
 const AVATAR_TABS = ["workflows", "node-library", "model-library", "roansPrompts"];
 
+// The tab's own accessible name is the panel title the app itself uses for that
+// tab ("Model Library (m)") — read it instead of inventing a second wording, and
+// drop the keyboard hint in brackets.
+function nativeTabTitle(tabId, fallback) {
+  const b = document.querySelector(`[data-testid="${tabId}-tab-button"]`);
+  const aria = b && b.getAttribute("aria-label");
+  const text = aria ? aria.replace(/\s*\([^)]*\)\s*$/, "").trim() : "";
+  return text || fallback;
+}
+
 /**
  * Badges the sidebar tab buttons that this extension is enhancing. The buttons
  * themselves are ComfyUI's: we only append an <img> inside them, and set
@@ -1386,22 +1411,54 @@ function reportDiag() {
   // is a spacing question, so measure it instead of eyeballing CSS.
   const spacing = (() => {
     const out = {};
+    const nt = document.querySelector(".comfy-vue-side-bar-header span.truncate.font-bold");
+    out.nativeTitle = nt
+      ? (() => {
+          const cs = getComputedStyle(nt);
+          const hr = nt.closest(".comfy-vue-side-bar-header");
+          return {
+            text: (nt.textContent || "").slice(0, 40),
+            font: cs.fontSize,
+            weight: cs.fontWeight,
+            color: cs.color,
+            headerH: hr ? Math.round(hr.getBoundingClientRect().height) : 0,
+            headerPad: hr ? getComputedStyle(hr).padding : "",
+          };
+        })()
+      : "no native panel title in this build";
     for (const sel of [".rt-wf-bar", ".rt-md-bar"]) {
       const bar = document.querySelector(sel);
       if (!bar) continue;
-      out[sel] = [...bar.querySelectorAll(".rt-sec")].map((s) => {
-        const p = s.parentElement;
-        return {
-          t: (s.textContent || "").slice(0, 22),
-          top: Math.round(s.getBoundingClientRect().top),
-          h: Math.round(s.getBoundingClientRect().height),
-          mt: getComputedStyle(s).marginTop,
-          mb: getComputedStyle(s).marginBottom,
-          parent: (p.className || "").toString().trim().slice(0, 30),
-          parentGap: getComputedStyle(p).gap,
-          parentPad: getComputedStyle(p).padding,
+      const own = bar.querySelector(".rt-panel-title");
+      if (own) {
+        const cs = getComputedStyle(own);
+        const hd = own.closest(".rt-panel-head");
+        out[sel + " title"] = {
+          text: (own.textContent || "").slice(0, 40),
+          font: cs.fontSize,
+          weight: cs.fontWeight,
+          headerH: hd ? Math.round(hd.getBoundingClientRect().height) : 0,
         };
+      }
+      const box = (e) => ({
+        cls: (e.className || "").toString().trim().slice(0, 24),
+        h: Math.round(e.getBoundingClientRect().height),
+        pad: getComputedStyle(e).padding,
+        gap: getComputedStyle(e).gap,
       });
+      const list = bar.querySelector(".rt-scroll");
+      out[sel] = {
+        listGap: list ? getComputedStyle(list).gap : "",
+        labels: [...bar.querySelectorAll(".rt-sec")].map((s) => {
+          const cs = getComputedStyle(s);
+          return { t: (s.textContent || "").slice(0, 22), font: cs.fontSize, weight: cs.fontWeight, color: cs.color };
+        }),
+        // where the crowding happens: each child's box and the step to the next one
+        cards: [...bar.querySelectorAll(".rt-card, .rt-folder")].slice(0, 3).map((c) => ({
+          ...box(c),
+          kids: [...c.children].map((k) => ({ ...box(k), top: Math.round(k.getBoundingClientRect().top) })),
+        })),
+      };
     }
     return out;
   })();
@@ -1764,6 +1821,16 @@ function buildWorkflowBar() {
   const bar = el("div", "rt-wf-bar rt-app");
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
+
+  // same rule as the Models bar: only when this build has no native panel header
+  if (!document.querySelector(".comfy-vue-side-bar-header")) {
+    const ph = el("div", "rt-panel-head");
+    ph.style.margin = "-8px -8px 0";
+    ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("workflows", "Workflows")));
+    ph.appendChild(el("span", "rt-spacer"));
+    ph.appendChild(el("span", "rt-dim", `${S.workflows.length} workflows`));
+    bar.appendChild(ph);
+  }
 
   const toolbar = el("div", "rt-head");
   const search = input("rt-grow", V.wf.q, "search workflows…");
@@ -2130,8 +2197,25 @@ function buildModelsBar() {
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
 
+  // The native header, when this build draws one, wins; otherwise we print the same
+  // box ourselves (title left, controls right) so Models matches Apps/Media assets.
+  if (!document.querySelector(".comfy-vue-side-bar-header")) {
+    const ph = el("div", "rt-panel-head");
+    ph.style.margin = "-8px -8px 0";
+    ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("model-library", "Models")));
+    ph.appendChild(el("span", "rt-spacer"));
+    const missing0 = S.models.filter((m) => !m.link).length;
+    ph.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing0} without a link`));
+    bar.appendChild(ph);
+  }
+
   const head = el("div", "rt-head");
-  head.appendChild(el("span", "rt-sec", "models"));
+  // The panel already prints its own title (SidebarTabTemplate: 16px bold inside a
+  // 64px header). Our own "models" label duplicated it in a different style — only
+  // draw it when this build has no native title to sit under.
+  if (!document.querySelector(".comfy-vue-side-bar-header span.truncate.font-bold")) {
+    head.appendChild(el("span", "rt-sec", "models"));
+  }
   head.appendChild(el("span", "rt-spacer"));
   const missing = S.models.filter((m) => !m.link).length;
   head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));

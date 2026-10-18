@@ -116,6 +116,18 @@ GitHub auth on this machine goes through **`gh`** (logged in as `roanh47`, `gh a
 run once), so `git push origin main` uses gh's credentials. Never put a token in the remote URL,
 and use `gh` for anything repo/PR/issue shaped (`gh repo view`, `gh pr create`, `gh run list`).
 
+## Native metrics (measured in the running app, frontend 1.53.6)
+- **Panel title** — `SidebarTabTemplate` renders it as `truncate font-bold` inside a `min-h-16 px-3`
+  panel: **16px / 700**, 64px min-height, 12px side padding, bottom border. Models and Workflows
+  panels in this build draw *no* header of their own, so our bars print one in exactly those values
+  (`.rt-panel-head` / `.rt-panel-title`), and `nativeTabTitle()` reads the tab's own aria-label so
+  the wording can never drift from the app's.
+- Buttons: 32px tall, 14px/500, radius 6, gap 8. Small text and search fields: 12px. Muted:
+  `#8a8a8a`. Tab buttons: 12px/500 with 8px padding.
+- Tree rows: 2px padding, 4px gap, radius 6. Our cards hold 2-3 lines where the native tree holds
+  one, so they use the app's 8px unit internally and a 6px gap between cards — at 6px/2px the badges
+  crowded the next card as soon as a folder was expanded.
+
 ## Gotcha
 Deleting or renaming this folder fails with **"Device or resource busy" / WinError 32** if any
 process has it as its working directory — including a Python kernel started with `cd` inside it.
