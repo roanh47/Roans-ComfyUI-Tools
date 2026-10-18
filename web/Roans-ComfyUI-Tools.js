@@ -162,6 +162,15 @@ const CSS = `
 .rt-card { margin-left:16px; }   /* workflows sit inside their folder, visibly */
 .rt-card.drop-before { box-shadow:inset 0 2px 0 0 var(--rt-accent,#60a5fa); }
 .rt-scroll.drop-root { box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); border-radius:6px; }
+/* appears only while a workflow is being dragged: the "out of the folder" target.
+   It sits in normal flow at the top of the list (not sticky) — a sticky bar covered
+   the first folder rows, so hit-testing picked the bar and drops on a folder did
+   nothing. */
+.rt-rootzone { display:flex; align-items:center; justify-content:center; height:32px; margin-bottom:4px;
+      border:1px dashed var(--rt-line); border-radius:6px; font-size:12px; color:var(--rt-muted);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rt-rootzone.on { border-color:var(--rt-accent,#60a5fa); color:var(--rt-accent,#60a5fa);
+      background:rgba(96,165,250,.08); }
 .rt-folder.drop-into { background:var(--rt-surface-hover,#313235);
       box-shadow:inset 0 0 0 1px var(--rt-accent,#60a5fa); }
 .rt-add { display:flex; align-items:center; gap:8px; height:var(--rt-ctl); padding:0 10px;
@@ -207,6 +216,7 @@ const V = {
 let uiStamp = null;
 let RT_FOLDER_INPUT = null;
 let RT_MD_PAINT = null;
+let RT_WF_DRAG = null; // { start(), end() } — the "out of the folder" drop target
 
 // An interaction log: every pointer/context event on our own panels, plus what
 // the menu looked like 60ms later. This is how a right-click that never reaches
@@ -1955,9 +1965,61 @@ function buildWorkflowBar() {
   tree.dataset.rtKind = "space";
   tree.dataset.rtKey = "";
 
-  // Dropping on the empty space means "out of the folder, back to the root" — there
-  // was no target for that at all, so a file inside a folder could never be dragged
-  // out again.
+  // A visible drop target that appears while a workflow is being dragged. With a full
+  // list there is no empty space to drop onto, which is why "drag it out of the folder"
+  // kept failing even though the handler existed.
+  let rootZone = null;
+  const hideRootZone = () => {
+    if (rootZone) {
+      rootZone.remove();
+      rootZone = null;
+    }
+  };
+  const showRootZone = () => {
+    if (rootZone) return;
+    rootZone = el("div", "rt-rootzone", "drop here to move it out of its folder");
+    rootZone.addEventListener("dragover", (ev) => {
+      if (!String(ev.dataTransfer.types).includes("text/plain")) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      rootZone.classList.add("on");
+    });
+    rootZone.addEventListener("dragleave", () => rootZone.classList.remove("on"));
+    rootZone.addEventListener("drop", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const payload = ev.dataTransfer.getData("text/plain");
+      hideRootZone();
+      if (!payload.startsWith("wf:")) return;
+      const rel = payload.slice(3);
+      const w = S.workflows.find((x) => x.rel === rel);
+      if (w && w.folder) await moveWorkflowTo(rel, "");
+    });
+    tree.insertBefore(rootZone, tree.firstChild);
+  };
+  RT_WF_DRAG = {
+    start: showRootZone,
+    end() {
+      hideRootZone();
+      for (const f of tree.querySelectorAll(".rt-folder")) f.classList.remove("drop-into");
+    },
+    // which folder is under the pointer right now ("" = the root / the empty list)
+    targetAt(px, py) {
+      const el = document.elementFromPoint(px, py);
+      if (!el) return undefined;
+      const row = el.closest && el.closest(".rt-folder");
+      if (row) return row.dataset.rtKey || "";
+      if (tree.contains(el)) return ""; // the list itself, incl. the drop zone
+      return undefined;
+    },
+    hover(px, py) {
+      const el = document.elementFromPoint(px, py);
+      const row = el && el.closest && el.closest(".rt-folder");
+      for (const f of tree.querySelectorAll(".rt-folder")) f.classList.toggle("drop-into", f === row);
+      if (rootZone) rootZone.classList.toggle("on", !row && !!el && tree.contains(el));
+    },
+  };
+
   tree.ondragover = (ev) => {
     if (!String(ev.dataTransfer.types).includes("text/plain")) return;
     ev.preventDefault();
@@ -1967,6 +2029,7 @@ function buildWorkflowBar() {
   tree.ondrop = async (ev) => {
     ev.preventDefault();
     tree.classList.remove("drop-root");
+    hideRootZone();
     const payload = ev.dataTransfer.getData("text/plain");
     if (!payload.startsWith("wf:")) return;
     const rel = payload.slice(3);
@@ -2037,7 +2100,54 @@ function buildWorkflowBar() {
 
     // drag a workflow onto another one to reorder, onto a folder to file it
     card.draggable = true;
-    card.ondragstart = (ev) => dragPayload(ev, `wf:${w.rel}`);
+    card.ondragstart = (ev) => {
+      dragPayload(ev, `wf:${w.rel}`);
+      RT_WF_DRAG && RT_WF_DRAG.start();
+    };
+    card.ondragend = () => RT_WF_DRAG && RT_WF_DRAG.end();
+
+    // Pointer-drag fallback. In this ComfyUI build the Vue layer swallows the native
+    // HTML5 drag, so a real mouse never gets a dragstart and nothing can be dragged at
+    // all — which is exactly what "I can't drag anything into or out of a folder" was.
+    // We start our own drag after a few pixels and hit-test on release; if a native
+    // dragstart does fire, we back off and let it run.
+    card.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      if (ev.target.closest && ev.target.closest("button, input, select, textarea")) return;
+      const sx = ev.clientX;
+      const sy = ev.clientY;
+      let nativeWon = false;
+      let dragging = false;
+      const onNative = () => {
+        nativeWon = true;
+      };
+      card.addEventListener("dragstart", onNative, { once: true });
+      const move = (e) => {
+        if (nativeWon) return;
+        if (!dragging && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+        if (!dragging) {
+          dragging = true;
+          document.documentElement.style.userSelect = "none";
+          RT_WF_DRAG && RT_WF_DRAG.start();
+        }
+        RT_WF_DRAG && RT_WF_DRAG.hover(e.clientX, e.clientY);
+      };
+      const up = async (e) => {
+        window.removeEventListener("pointermove", move, true);
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", up, true);
+        document.documentElement.style.userSelect = "";
+        if (!dragging) return;
+        const target = RT_WF_DRAG ? RT_WF_DRAG.targetAt(e.clientX, e.clientY) : undefined;
+        RT_WF_DRAG && RT_WF_DRAG.end();
+        if (nativeWon || target === undefined) return;
+        if (target === (w.folder || "")) return; // dropped where it already is
+        await moveWorkflowTo(w.rel, target);
+      };
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", up, true);
+    });
     card.ondragover = (ev) => {
       if (!String(ev.dataTransfer.types).includes("text/plain")) return;
       ev.preventDefault();
