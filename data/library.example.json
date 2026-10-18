@@ -6,7 +6,7 @@
    "model_type": "Checkpoint",
    "file_type": "fp16 SafeTensor",
    "version": "v1.0",
-   "base": "Illustrious",
+   "base": "",
    "link": "https://civitai.com/models/000000/some-model",
    "why": "why you downloaded it",
    "keyword": "trigger word, if the lora has one",

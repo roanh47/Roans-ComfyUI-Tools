@@ -32,7 +32,10 @@ Roans-ComfyUI-Tools/
 ├── data/library.json              # YOUR data — gitignored, never commit
 ├── data/library.example.json      # empty template, safe to commit
 ├── web/avatar.jpg                 # your pfp for the tab badges — gitignored
-└── web/Roans-ComfyUI-Tools.js     # Prompts tab + native-panel enhancements
+├── web/Roans-ComfyUI-Tools.js     # Prompts tab + native-panel enhancements
+├── tools/cdp.mjs                  # trusted input + DOM reads over the DevTools Protocol
+├── tools/live-test.mjs            # scripted real-click / real-right-click / real-drag check
+└── docs/live-verification.md      # how to verify in the running app, and the traps
 ```
 
 ## Developing live
@@ -97,11 +100,34 @@ it is prettier.
 - Workflow parsing handles both UI format (`nodes`/`links`) and API format (`class_type`).
   Positive/negative are resolved by following the KSampler link, not by widget order.
 - Anything the user types wins over a detected value; the detected value is only a fallback.
-- Content search ANDs its terms, so `h0rs3 mud` narrows to one result instead of five.
+- Content search ANDs its terms, so two words narrow to the files holding both instead of
+  every file holding either.
 - The `custom`-tab `render` return value is unused; repaint is driven by `ui_version` polling and
   `repaint`.
 
 ## Verifying a change
+
+**Verify with real input, not with events you dispatch yourself.** A synthetic
+`new MouseEvent("contextmenu")` runs whatever handler you wired; it says nothing about
+what the app actually receives, and a drag cannot be faked that way at all. This build
+also never starts a native HTML5 drag (no `dragstart`, no `Input.dragIntercepted`, even
+with `Input.setInterceptDrags` on), so the panel's own pointer path *is* the drag. Drive
+the real app over the DevTools Protocol instead:
+
+```bash
+powershell.exe -NoProfile -Command "Start-Process -FilePath '$env:LOCALAPPDATA\Programs\Comfy Desktop\Comfy Desktop.exe' -ArgumentList '--remote-debugging-port=9222'"
+node tools/cdp.mjs targets                     # panel.html = launcher, 8188 = the app
+node tools/cdp.mjs click 492 534               # the instance card, instead of hunting pixels
+node tools/cdp.mjs rightclick 488 332          # a real contextmenu
+node tools/cdp.mjs drag 488 253 488 440        # press, move, drop — the real drag
+node tools/live-test.mjs                       # the whole check, exit 0 = all passed
+```
+
+Full procedure, the `CDP_URL_MATCH` details and the traps that cost time (Escape closes
+the sidebar, a fixed click can hit a folder header, clicking a selected tab closes the
+panel, editing the JS reloads the page mid-test, a partial order list scrambles a
+folder): `docs/live-verification.md`.
+
 ComfyUI must be running (`curl http://127.0.0.1:8188/system_stats`). Then:
 
 ```bash

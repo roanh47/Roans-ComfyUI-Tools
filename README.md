@@ -140,3 +140,13 @@ Nothing here needs a ComfyUI restart except `__init__.py` itself.
   so saving a workflow in the UI shows up with no action.
 - Supported workflow formats: UI-format (`nodes`/`links`) and API-format (`class_type`).
 - No dependencies beyond the Python stdlib. Nothing leaves the machine.
+
+## Working on it
+
+`tools/` holds a dependency-free DevTools-Protocol client (`node >= 22`) that drives the
+real app with trusted input — real clicks, real right-clicks, real drags — and
+`node tools/live-test.mjs` runs a scripted check of the Workflows panel (open the tab,
+right-click a row, assert the menu, drag a row, assert it lands where the line was drawn).
+That needs the app started with `--remote-debugging-port=9222`; the procedure and the traps
+are in `docs/live-verification.md`, and `AGENTS.md` describes the layout and the style
+rules the panels have to follow.

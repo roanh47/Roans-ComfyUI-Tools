@@ -1902,6 +1902,15 @@ async function dropOntoWorkflow(draggedRel, target, after) {
   const list = visibleWorkflowRows(folder).filter((r) => r !== draggedRel && r !== rel);
   const at = list.indexOf(target.rel);
   list.splice(at < 0 ? list.length : at + (after ? 1 : 0), 0, rel);
+  // Every workflow of that folder must be in the list we write. Sending only the
+  // rows that happened to be on screen left the others holding their old order
+  // numbers, and the two numberings interleaved into a scrambled list.
+  const seen = new Set(list);
+  const rest = S.workflows
+    .filter((w) => (w.folder || "") === folder && !seen.has(w.rel) && w.rel !== draggedRel)
+    .sort((a, b) => (a.order == null ? 1e9 : a.order) - (b.order == null ? 1e9 : b.order))
+    .map((w) => w.rel);
+  list.push(...rest);
   await api("/wf_order", { rels: list });
   V.wf.sort = "custom";
   await load(true);
@@ -2010,26 +2019,45 @@ function buildWorkflowBar() {
     });
     tree.insertBefore(rootZone, tree.firstChild);
   };
+  let dragTarget = null;
   RT_WF_DRAG = {
     start: showRootZone,
     end() {
       hideRootZone();
+      dragTarget = null;
       for (const f of tree.querySelectorAll(".rt-folder")) f.classList.remove("drop-into");
+      for (const c of tree.querySelectorAll(".rt-card")) c.classList.remove("drop-before", "drop-after");
     },
-    // which folder is under the pointer right now ("" = the root / the empty list)
-    targetAt(px, py) {
-      const el = document.elementFromPoint(px, py);
-      if (!el) return undefined;
-      const row = el.closest && el.closest(".rt-folder");
-      if (row) return row.dataset.rtKey || "";
-      if (tree.contains(el)) return ""; // the list itself, incl. the drop zone
-      return undefined;
-    },
+    // What is under the pointer: a workflow row (reorder, before or after it), a
+    // folder row (file it there), or the empty list (take it out of its folder).
+    // The row case is why dragging inside a folder used to dump the workflow in
+    // the root: this path knew folders and nothing else.
     hover(px, py) {
       const el = document.elementFromPoint(px, py);
-      const row = el && el.closest && el.closest(".rt-folder");
-      for (const f of tree.querySelectorAll(".rt-folder")) f.classList.toggle("drop-into", f === row);
-      if (rootZone) rootZone.classList.toggle("on", !row && !!el && tree.contains(el));
+      const folder = el && el.closest && el.closest(".rt-folder");
+      const card = el && el.closest && el.closest('.rt-card[data-rt-kind="wf"]');
+      for (const f of tree.querySelectorAll(".rt-folder")) f.classList.toggle("drop-into", f === folder);
+      let after = false;
+      if (card) {
+        const b = card.getBoundingClientRect();
+        after = py > b.top + b.height / 2;
+      }
+      for (const c of tree.querySelectorAll(".rt-card")) {
+        c.classList.toggle("drop-before", c === card && !after);
+        c.classList.toggle("drop-after", c === card && after);
+      }
+      const inList = !!el && tree.contains(el);
+      if (rootZone) rootZone.classList.toggle("on", inList && !folder && !card);
+      dragTarget = card
+        ? { kind: "row", rel: card.dataset.rtKey, after }
+        : folder
+          ? { kind: "folder", folder: folder.dataset.rtKey || "" }
+          : inList
+            ? { kind: "root" }
+            : null;
+    },
+    resolve() {
+      return dragTarget || undefined;
     },
   };
 
@@ -2151,11 +2179,17 @@ function buildWorkflowBar() {
         window.removeEventListener("pointercancel", up, true);
         document.documentElement.style.userSelect = "";
         if (!dragging) return;
-        const target = RT_WF_DRAG ? RT_WF_DRAG.targetAt(e.clientX, e.clientY) : undefined;
+        const drop = RT_WF_DRAG ? RT_WF_DRAG.resolve() : undefined;
         RT_WF_DRAG && RT_WF_DRAG.end();
-        if (nativeWon || target === undefined) return;
-        if (target === (w.folder || "")) return; // dropped where it already is
-        await moveWorkflowTo(w.rel, target);
+        if (nativeWon || !drop) return;
+        if (drop.kind === "row") {
+          const onto = S.workflows.find((x) => x.rel === drop.rel);
+          if (onto && drop.rel !== w.rel) await dropOntoWorkflow(w.rel, onto, drop.after);
+        } else if (drop.kind === "folder") {
+          if (drop.folder !== (w.folder || "")) await moveWorkflowTo(w.rel, drop.folder);
+        } else if (w.folder) {
+          await moveWorkflowTo(w.rel, "");
+        }
       };
       window.addEventListener("pointermove", move, true);
       window.addEventListener("pointerup", up, true);
