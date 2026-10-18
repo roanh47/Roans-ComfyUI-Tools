@@ -141,9 +141,9 @@ and use `gh` for anything repo/PR/issue shaped (`gh repo view`, `gh pr create`, 
   the wording can never drift from the app's.
 - Buttons: 32px tall, 14px/500, radius 6, gap 8. Small text and search fields: 12px. Muted:
   `#8a8a8a`. Tab buttons: 12px/500 with 8px padding.
-- Tree rows: 2px padding, 4px gap, radius 6. Our cards hold 2-3 lines where the native tree holds
-  one, so they use the app's 8px unit internally and a 6px gap between cards — at 6px/2px the badges
-  crowded the next card as soon as a folder was expanded.
+- Tree rows: 2px padding, 4px gap, radius 6. Our rows carry a 32px control, so a row is 40px
+  (4px pad) and the list gap is 4px — 44px pitch between folders. Cards keep the app's 8px unit
+  internally so the badge line does not crowd the title.
 
 ## Gotcha
 Deleting or renaming this folder fails with **"Device or resource busy" / WinError 32** if any
