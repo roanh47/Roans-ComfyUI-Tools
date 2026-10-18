@@ -748,7 +748,7 @@ function renderPrompts(root) {
 
   // same title block as the Models and Workflows bars
   const ph = el("div", "rt-panel-head");
-  ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("roansPrompts", "Prompts")));
+  ph.appendChild(el("span", "rt-panel-title", "Prompts"));
   ph.appendChild(el("span", "rt-spacer"));
   ph.appendChild(el("span", "rt-dim", `${S.prompts.length} prompts`));
   wrap.appendChild(ph);
@@ -981,16 +981,6 @@ const AVATAR_GAP = 5; // px — the spacing, used for BOTH the top and the left 
 // Only the panels we are actively shaping carry the badge; the Node Library is
 // ComfyUI's own and stays untouched until we work on it.
 const AVATAR_TABS = ["workflows", "model-library", "roansPrompts"];
-
-// The tab's own accessible name is the panel title the app itself uses for that
-// tab ("Model Library (m)") — read it instead of inventing a second wording, and
-// drop the keyboard hint in brackets.
-function nativeTabTitle(tabId, fallback) {
-  const b = document.querySelector(`[data-testid="${tabId}-tab-button"]`);
-  const aria = b && b.getAttribute("aria-label");
-  const text = aria ? aria.replace(/\s*\([^)]*\)\s*$/, "").trim() : "";
-  return text || fallback;
-}
 
 /**
  * Badges the sidebar tab buttons that this extension is enhancing. The buttons
@@ -1881,15 +1871,13 @@ function buildWorkflowBar() {
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
 
-  // same rule as the Models bar: only when this build has no native panel header
-  if (!document.querySelector(".comfy-vue-side-bar-header")) {
-    const ph = el("div", "rt-panel-head");
-    ph.style.margin = "-8px -8px 0";
-    ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("workflows", "Workflows")));
-    ph.appendChild(el("span", "rt-spacer"));
-    ph.appendChild(el("span", "rt-dim", `${S.workflows.length} workflows`));
-    bar.appendChild(ph);
-  }
+  // same title block as the Models and Prompts panels
+  const ph = el("div", "rt-panel-head");
+  ph.style.margin = "-8px -8px 0";
+  ph.appendChild(el("span", "rt-panel-title", "Workflows"));
+  ph.appendChild(el("span", "rt-spacer"));
+  ph.appendChild(el("span", "rt-dim", `${S.workflows.length} workflows`));
+  bar.appendChild(ph);
 
   const toolbar = el("div", "rt-head");
   const search = input("rt-grow", V.wf.q, "search workflows…");
@@ -2256,25 +2244,17 @@ function buildModelsBar() {
   bar.style.cssText =
     "display:flex;flex-direction:column;gap:8px;padding:8px;border-bottom:1px solid rgba(255,255,255,.09);";
 
-  // The native header, when this build draws one, wins; otherwise we print the same
-  // box ourselves (title left, controls right) so Models matches Apps/Media assets.
-  if (!document.querySelector(".comfy-vue-side-bar-header")) {
-    const ph = el("div", "rt-panel-head");
-    ph.style.margin = "-8px -8px 0";
-    ph.appendChild(el("span", "rt-panel-title", nativeTabTitle("model-library", "Models")));
-    ph.appendChild(el("span", "rt-spacer"));
-    const missing0 = S.models.filter((m) => !m.link).length;
-    ph.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing0} without a link`));
-    bar.appendChild(ph);
-  }
+  // Always our own title block: Models, Workflows and Prompts must look identical, and
+  // the wording is the plain panel name (not the tab's longer accessible label).
+  const ph = el("div", "rt-panel-head");
+  ph.style.margin = "-8px -8px 0";
+  ph.appendChild(el("span", "rt-panel-title", "Models"));
+  ph.appendChild(el("span", "rt-spacer"));
+  const missing0 = S.models.filter((m) => !m.link).length;
+  ph.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing0} without a link`));
+  bar.appendChild(ph);
 
   const head = el("div", "rt-head");
-  // The panel already prints its own title (SidebarTabTemplate: 16px bold inside a
-  // 64px header). Our own "models" label duplicated it in a different style — only
-  // draw it when this build has no native title to sit under.
-  if (!document.querySelector(".comfy-vue-side-bar-header span.truncate.font-bold")) {
-    head.appendChild(el("span", "rt-sec", "models"));
-  }
   head.appendChild(el("span", "rt-spacer"));
   const missing = S.models.filter((m) => !m.link).length;
   head.appendChild(el("span", "rt-dim", `${S.models.length} files · ${missing} without a link`));
