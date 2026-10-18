@@ -47,6 +47,11 @@ const CSS = `
 .rt-scroll::-webkit-scrollbar-track { background:transparent; }
 .rt-scroll::-webkit-scrollbar-thumb { background:var(--rt-line); border-radius:4px; }
 .rt-scroll::-webkit-scrollbar-thumb:hover { background:var(--rt-surface-hover); }
+/* Flex children are allowed to shrink once the column overflows, and our rows only
+   declared a min-height — so the moment a folder expanded and the list started
+   scrolling, every folder row was squeezed from 44px to 32px and the whole list read
+   as much tighter. Rows keep their natural height; the list does the scrolling. */
+.rt-scroll > * { flex:0 0 auto; }
 
 /* ---- panel title: identical box to ComfyUI's own header ------------------- */
 /* SidebarTabTemplate renders the panel title as "truncate font-bold" inside a
